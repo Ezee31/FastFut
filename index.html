@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Estudio de corte</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="app">
+      <header>
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <div>
+            <strong>Estudio de corte</strong>
+            <em>Cabeza modelada desde tu foto</em>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button type="button" id="btn-random">Al azar</button>
+          <button type="button" id="btn-shot">Guardar foto</button>
+        </div>
+      </header>
+
+      <aside id="panel">
+        <section>
+          <h2>Cortes</h2>
+          <div id="presets" class="preset-grid"></div>
+        </section>
+        <section>
+          <h2>Ajuste</h2>
+          <label class="slider">
+            <span>Largo arriba <b id="length-read">6 cm</b></span>
+            <input id="length" type="range" min="0.1" max="18" step="0.1" />
+          </label>
+          <label class="slider">
+            <span>Degradado <b id="fade-read">Medio</b></span>
+            <input id="fade" type="range" min="0" max="1" step="0.01" />
+          </label>
+          <label class="slider">
+            <span>Rizos <b id="curl-read"></b></span>
+            <input id="curl" type="range" min="0" max="1" step="0.01" />
+          </label>
+          <label class="slider">
+            <span>Volumen</span>
+            <input id="volume" type="range" min="0" max="1" step="0.01" />
+          </label>
+          <label class="slider">
+            <span>Caída <b id="flow-read">Natural</b></span>
+            <input id="flow" type="range" min="-1" max="1" step="0.01" />
+            <small>Adelante · Atrás</small>
+          </label>
+          <label class="slider">
+            <span>Raya</span>
+            <input id="part" type="range" min="-1" max="1" step="0.01" />
+            <small>Izquierda · Derecha</small>
+          </label>
+          <label class="slider">
+            <span>Desorden</span>
+            <input id="mess" type="range" min="0" max="1" step="0.01" />
+          </label>
+          <label class="slider">
+            <span>Barba <b id="beard-read"></b></span>
+            <input id="beard" type="range" min="0" max="1" step="0.01" />
+          </label>
+          <div class="segmented" id="beard-styles"></div>
+          <div class="colors" id="colors"></div>
+          <button type="button" id="btn-reset" class="ghost">Restablecer este corte</button>
+        </section>
+        <section>
+          <h2>Tus fotos</h2>
+          <div id="refs" class="refs"></div>
+        </section>
+      </aside>
+
+      <div id="stage-ui">
+        <div id="cut-name">
+          <strong></strong>
+          <span></span>
+        </div>
+        <div id="views" class="views"></div>
+        <p id="hint">Arrastra para girar la cabeza · rueda para acercar</p>
+      </div>
+    </div>
+    <div id="loader">Modelando tu cara…</div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
