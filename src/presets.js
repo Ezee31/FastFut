@@ -1,9 +1,10 @@
-/** Haircut presets. Lengths are centimetres on the real head scale. */
+/** Haircut presets. Length is centimetres above the hairline on the photo. Beard is how much of the beard in the photo to keep. */
 export const PRESETS = [
   {
     id: "actual",
     name: "Tu corte",
     detail: "Crop rizado, degradado medio",
+    photo: true,
     lengthCm: 4.8,
     fade: 0.72,
     curl: 0.7,
@@ -19,7 +20,7 @@ export const PRESETS = [
     density: 1,
     mess: 0.22,
     stubbleCm: 0.15,
-    beard: 0,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -41,7 +42,7 @@ export const PRESETS = [
     density: 1,
     mess: 0.36,
     stubbleCm: 0.18,
-    beard: 0.28,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -63,7 +64,7 @@ export const PRESETS = [
     density: 1,
     mess: 0.3,
     stubbleCm: 0.2,
-    beard: 0.26,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -85,7 +86,7 @@ export const PRESETS = [
     density: 1,
     mess: 0.16,
     stubbleCm: 0.18,
-    beard: 0.18,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -107,7 +108,7 @@ export const PRESETS = [
     density: 0.9,
     mess: 0.1,
     stubbleCm: 0.25,
-    beard: 0.12,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -129,7 +130,7 @@ export const PRESETS = [
     density: 0.92,
     mess: 0.14,
     stubbleCm: 0.3,
-    beard: 0.4,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -151,8 +152,8 @@ export const PRESETS = [
     density: 0.95,
     mess: 0.18,
     stubbleCm: 0.35,
-    beard: 0.22,
-    beardStyle: "mustache",
+    beard: 1,
+    beardStyle: "full",
   },
   {
     id: "undercut",
@@ -173,8 +174,8 @@ export const PRESETS = [
     density: 1,
     mess: 0.22,
     stubbleCm: 0.12,
-    beard: 0.2,
-    beardStyle: "goatee",
+    beard: 1,
+    beardStyle: "full",
   },
   {
     id: "afro",
@@ -195,7 +196,7 @@ export const PRESETS = [
     density: 1,
     mess: 0.28,
     stubbleCm: 0.4,
-    beard: 0.15,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -217,7 +218,7 @@ export const PRESETS = [
     density: 0.9,
     mess: 0.4,
     stubbleCm: 0.45,
-    beard: 0.45,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -239,7 +240,7 @@ export const PRESETS = [
     density: 0.95,
     mess: 0.34,
     stubbleCm: 0.22,
-    beard: 0.36,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -261,7 +262,7 @@ export const PRESETS = [
     density: 0.92,
     mess: 0.38,
     stubbleCm: 0.3,
-    beard: 0.18,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -283,8 +284,8 @@ export const PRESETS = [
     density: 1,
     mess: 0.2,
     stubbleCm: 0.12,
-    beard: 0.1,
-    beardStyle: "goatee",
+    beard: 1,
+    beardStyle: "full",
   },
   {
     id: "buzz",
@@ -305,7 +306,7 @@ export const PRESETS = [
     density: 0.75,
     mess: 0.05,
     stubbleCm: 0.35,
-    beard: 0.16,
+    beard: 1,
     beardStyle: "full",
   },
   {
@@ -349,7 +350,7 @@ export const PRESETS = [
     density: 0.82,
     mess: 0.36,
     stubbleCm: 0.5,
-    beard: 0.55,
+    beard: 1,
     beardStyle: "full",
   },
 ];

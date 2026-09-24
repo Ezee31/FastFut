@@ -1,6 +1,6 @@
 # Estudio de corte
 
-Estudio 3D para probar cortes sobre una cabeza modelada a partir de una foto frontal. La cara usa la textura real; el cráneo, las orejas y el pelo se reconstruyen para poder girar la cabeza y cambiar el corte.
+Prueba cortes sobre tu foto frontal. La cara es la foto, sin deformarla: el pelo se recorta, se degrada o se deja al ras, y donde se quita aparece el cuero cabelludo con la luz de tu frente.
 
 ## Usar
 
@@ -9,14 +9,14 @@ npm install
 npm run dev
 ```
 
-Abre la URL que imprime Vite. Arrastra para girar, elige un corte y ajusta largo, degradado, rizos, barba y color. Las flechas izquierda y derecha cambian de corte. `R` gira la cabeza sola.
+Abre la URL que imprime Vite. Elige un corte y ajusta largo, degradado, flequillo, raya, color y barba. Las flechas izquierda y derecha cambian de corte. «Tu corte» vuelve a la foto sin retoque.
 
-## Regenerar el modelo
+## Regenerar las capas
 
-Hace falta Python con `pillow`, `numpy` y `mediapipe`, más las fotos originales:
+Hace falta Python con `pillow`, `numpy` y `opencv-python`, y `public/texture.jpg`:
 
 ```bash
-python3 scripts/build_face.py
+python3 scripts/build_studio.py
 ```
 
-El script escribe `public/face.json`, `public/texture.jpg` y las miniaturas de `public/refs/`.
+Eso escribe `public/bald.jpg`, `public/shaved.jpg`, las máscaras y `public/studio.json`.
