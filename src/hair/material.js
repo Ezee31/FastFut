@@ -89,7 +89,7 @@ void main() {
   vec3 lighting = uAmbient * 0.9;
   lighting += uKeyColor * strandDiffuse(t, uKeyDir) * 1.15;
   lighting += uFillColor * strandDiffuse(t, uFillDir) * 0.42;
-  lighting += uRimColor * max(0.0, dot(n, uRimDir)) * 0.38;
+  lighting += uRimColor * max(0.0, dot(n, uRimDir)) * 0.62;
   vec3 color = albedo * lighting * occlusion;
 
   // Two shifted lobes: a tight white one and a broad one tinted by the hair.

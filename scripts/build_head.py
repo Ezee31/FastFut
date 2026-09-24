@@ -30,10 +30,28 @@ UPPER_ARC = [234, 127, 162, 21, 54, 103, 67, 109, 10, 338, 297, 332, 284, 251, 3
 LOWER_ARC = [234, 93, 132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323, 454]
 
 # Skull fitted to the canonical face: a bit wider than the cheekbones, deep at the back.
-SKULL_CENTER = np.array([0.0, 1.1, -0.9])
-SKULL_RADII = np.array([8.05, 11.0, 9.5])
+SKULL_CENTER = np.array([0.0, 1.35, -1.35])
+SKULL_RADII = np.array([7.85, 10.45, 9.7])
 # Where the hair swirls, on the back of the crown.
 SWIRL_DIR = np.array([0.0, 0.72, -0.62])
+
+# Anatomy on top of the ellipsoid: (azimuth deg, elevation deg, width az, width el, amount).
+# Azimuth 0 is the face, 180 the back of the head, +90 the right ear.
+SKULL_SHAPE = [
+    ("temples", 62, 22, 30, 26, -0.05),
+    ("temples", -62, 22, 30, 26, -0.05),
+    ("parietal", 112, 28, 36, 26, 0.04),
+    ("parietal", -112, 28, 36, 26, 0.04),
+    # The occiput is the roundest part of the back of the head.
+    ("occiput", 180, 2, 62, 38, 0.055),
+    ("inion", 180, -16, 34, 14, 0.028),
+    ("mastoid", 102, -6, 20, 16, 0.03),
+    ("mastoid", -102, -6, 20, 16, 0.03),
+    # A gentle tuck into the neck, wide enough that it does not pinch into a V.
+    ("nape", 180, -40, 62, 18, -0.055),
+    ("crown", 170, 76, 110, 22, -0.018),
+    ("forehead", 0, 52, 46, 24, -0.038),
+]
 
 ATLAS = {
     "face": [0.005, 0.505, 0.49, 0.49],
@@ -71,13 +89,51 @@ def canonical_model():
     return verts, per_vertex_uv, np.array(faces)
 
 
+AZ_STEPS = 72
+EL_STEPS = 37
+
+
+def shape_factor(azimuth, elevation):
+    """Radius multiplier that turns the ellipsoid into a skull."""
+    total = 1.0
+    for _, az0, el0, waz, wel, amount in SKULL_SHAPE:
+        d_az = (azimuth - az0 + 180) % 360 - 180
+        d_el = elevation - el0
+        total += amount * math.exp(-((d_az / waz) ** 2) - ((d_el / wel) ** 2))
+    return total
+
+
+def shape_table():
+    table = np.zeros((EL_STEPS, AZ_STEPS), dtype=np.float32)
+    for e in range(EL_STEPS):
+        elevation = -90 + 180 * e / (EL_STEPS - 1)
+        for a in range(AZ_STEPS):
+            azimuth = -180 + 360 * a / AZ_STEPS
+            table[e, a] = shape_factor(azimuth, elevation)
+    return table
+
+
+def shape_for_dirs(dirs):
+    """Sample the anatomy field for unit directions in sphere space."""
+    dirs = dirs / np.linalg.norm(dirs, axis=-1, keepdims=True)
+    azimuth = np.degrees(np.arctan2(dirs[..., 0], dirs[..., 2]))
+    elevation = np.degrees(np.arcsin(np.clip(dirs[..., 1], -1, 1)))
+    flat_az = np.atleast_1d(azimuth)
+    flat_el = np.atleast_1d(elevation)
+    out = np.array([shape_factor(a, e) for a, e in zip(flat_az.ravel(), flat_el.ravel())])
+    return out.reshape(flat_az.shape)
+
+
 def to_sphere(points):
     return (points - SKULL_CENTER) / SKULL_RADII
 
 
 def to_skull(dirs):
+    dirs = np.atleast_2d(dirs)
     dirs = dirs / np.linalg.norm(dirs, axis=-1, keepdims=True)
-    return dirs * SKULL_RADII + SKULL_CENTER
+    factor = shape_for_dirs(dirs)[..., None]
+    out = dirs * SKULL_RADII * factor + SKULL_CENTER
+    return out[0] if out.shape[0] == 1 else out
 
 
 def slerp(a, b, t):
@@ -133,8 +189,8 @@ def back_arc(front_dirs, ear_left, ear_right):
     return np.array(dirs)
 
 
-NECK_CENTER = np.array([0.0, -15.5, -1.9])
-NECK_RADII = np.array([5.9, 5.4])
+NECK_CENTER = np.array([0.0, -15.8, -2.4])
+NECK_RADII = np.array([5.5, 5.0])
 
 
 def oval_loop():
@@ -143,22 +199,34 @@ def oval_loop():
     return [int(i) for i in loop]
 
 
+def neck_radius(azimuth):
+    """The neck is not round: wider and flatter at the nape, narrow at the throat."""
+    back = math.cos(math.radians(azimuth - 180))
+    return NECK_RADII[0] * (1.0 + 0.10 * max(0.0, back)), NECK_RADII[1] * (
+        1.0 + 0.06 * max(0.0, back) - 0.05 * max(0.0, -back)
+    )
+
+
 def project_bust(points):
     """Snap toward the skull above and the neck below, with a smooth transition."""
     out = points.copy()
     for i, p in enumerate(points):
         sphere = (p - SKULL_CENTER) / SKULL_RADII
         length = np.linalg.norm(sphere)
-        skull = SKULL_CENTER + (sphere / max(length, 1e-6)) * SKULL_RADII
+        direction = sphere / max(length, 1e-6)
+        skull = SKULL_CENTER + direction * SKULL_RADII * shape_for_dirs(direction[None, :])[0]
         radial = np.array([p[0] - NECK_CENTER[0], p[2] - NECK_CENTER[2]])
-        rlen = np.linalg.norm(radial / NECK_RADII)
+        azimuth = math.degrees(math.atan2(radial[0], radial[1]))
+        nrx, nrz = neck_radius(azimuth)
+        rlen = np.linalg.norm(radial / np.array([nrx, nrz]))
         neck = p.copy()
         if rlen > 1e-6:
             scaled = radial / rlen
             neck[0] = NECK_CENTER[0] + scaled[0]
             neck[2] = NECK_CENTER[2] + scaled[1]
-        # Below the jaw the neck wins, above the ears the skull wins.
-        w = np.clip((p[1] + 9.5) / 8.0, 0.0, 1.0)
+        # Long blend: the occiput stays round, then eases into the neck
+        # instead of hitting the cylinder and going flat.
+        w = np.clip((p[1] + 11.2) / 10.4, 0.0, 1.0)
         w = w * w * (3 - 2 * w)
         out[i] = skull * w + neck * (1 - w)
     return out
@@ -174,22 +242,31 @@ def build_shell(verts):
     ring_pos = np.array([verts[i] for i in ring_idx])
 
     # Angle around the neck: left ear -> back -> right ear -> throat -> left ear.
+    # Spread the neck angles by arc length along the oval, not by vertex index,
+    # or the neck and shoulders inherit the uneven spacing as facets.
     upper_span = len(UPPER_ARC) - 1
     total = len(loop)
     alpha = np.zeros(total)
-    for i in range(total):
-        if i <= upper_span:
-            alpha[i] = math.pi + math.pi * (i / upper_span)
-        else:
-            alpha[i] = 2 * math.pi + math.pi * ((i - upper_span) / (total - upper_span))
+    for span_start, span_end, a_start, a_end in (
+        (0, upper_span, math.pi, 2 * math.pi),
+        (upper_span, total, 2 * math.pi, 3 * math.pi),
+    ):
+        segment = ring_pos[span_start : span_end + 1] if span_end < total else np.vstack(
+            [ring_pos[span_start:], ring_pos[:1]]
+        )
+        lengths = np.linalg.norm(np.diff(segment, axis=0), axis=1)
+        travel = np.concatenate([[0.0], np.cumsum(lengths)])
+        travel = travel / max(travel[-1], 1e-6)
+        for k in range(span_start, span_end):
+            alpha[k] = a_start + (a_end - a_start) * travel[k - span_start]
     ring_alpha = alpha
 
     neck_ring = np.zeros((cols, 3))
     for c in range(cols):
         a = ring_alpha[c]
-        neck_ring[c] = NECK_CENTER + np.array(
-            [math.cos(a) * NECK_RADII[0], 0.0, math.sin(a) * NECK_RADII[1]]
-        )
+        azimuth = math.degrees(math.atan2(math.cos(a), math.sin(a)))
+        nrx, nrz = neck_radius(azimuth)
+        neck_ring[c] = NECK_CENTER + np.array([math.cos(a) * nrx, 0.0, math.sin(a) * nrz])
         # The nape sits higher than the throat.
         neck_ring[c, 1] += 1.9 * math.cos(a - math.pi * 1.5) * 0.5
 
@@ -242,34 +319,66 @@ def build_shell(verts):
     grid[0] = ring_pos
     grid[-1] = neck_ring
 
-    for _ in range(6):
+    for _ in range(4):
         inner = grid[1:-1].copy()
         up = grid[:-2]
         down = grid[2:]
         left = np.roll(inner, 1, axis=1)
         right = np.roll(inner, -1, axis=1)
-        grid[1:-1] = inner * 0.36 + (up + down + left + right) * 0.16
+        grid[1:-1] = inner * 0.42 + (up + down + left + right) * 0.145
+
+    # Smoothing kills the occiput. Put the cranium back on the skull and
+    # leave the nape rows free so they can curve into the neck.
+    snapped = project_bust(grid.reshape(-1, 3)).reshape(rows, cols, 3)
+    for r in range(1, rows - 1):
+        t = r / (rows - 1)
+        hold = 1.0 - max(0.0, min(1.0, (t - 0.38) / 0.46))
+        hold = hold * hold * (3 - 2 * hold)
+        if hold <= 0:
+            continue
+        grid[r] = grid[r] * (1 - hold * 0.9) + snapped[r] * (hold * 0.9)
+    grid[0] = ring_pos
+    # The occiput used to fall onto a neck that sat well in front of it, which
+    # read as a shelf. Push the nape back so the profile is one curve.
+    for r in range(1, rows):
+        for c in range(cols):
+            y = grid[r, c, 1]
+            if y > 0.4 or grid[r, c, 2] > NECK_CENTER[2] - 0.2:
+                continue
+            rise = min(1.0, max(0.0, (0.4 - y) / 3.2))
+            fall = min(1.0, max(0.0, (y + 16.2) / 5.5))
+            side = min(1.0, abs(grid[r, c, 0]) / 7.2)
+            grid[r, c, 2] -= 2.05 * rise * fall * (1.0 - side * side)
+    grid[-1, :, 0] = neck_ring[:, 0]
+    grid[-1, :, 1] = neck_ring[:, 1]
+    neck_ring = grid[-1].copy()
 
     shoulders = build_shoulders(neck_ring, ring_alpha)
     return grid, ring_idx, neck_ring, shoulders
 
 
 def build_shoulders(neck_ring, ring_alpha):
-    rows = 10
+    """Trapezius rising out of the neck, then the shoulder line dropping away."""
+    rows = 12
     cols = neck_ring.shape[0]
     out = np.zeros((rows, cols, 3))
     for r in range(rows):
         t = (r + 1) / rows
         for c in range(cols):
             a = ring_alpha[c]
-            base = neck_ring[c]
-            ease = t * t
-            wide = 1.0 + ease * 1.85
+            side = abs(math.cos(a))  # 1 at the sides, 0 front and back
+            ease = t * t * (3 - 2 * t)
+            # Rebuild from the angle so the ring stays smooth, then spread it.
+            nrx, nrz = neck_radius(math.degrees(math.atan2(math.cos(a), math.sin(a))))
+            wide = 1.0 + (0.5 * t + 1.35 * ease) * (0.5 + 0.5 * side)
             deep = 1.0 + ease * 0.95
-            point = base.copy()
-            point[0] = (base[0] - NECK_CENTER[0]) * wide + NECK_CENTER[0]
-            point[2] = (base[2] - NECK_CENTER[2]) * deep + NECK_CENTER[2]
-            point[1] = base[1] - t * 5.2 - ease * (abs(math.cos(a)) ** 2) * 3.4
+            point = np.array(
+                [
+                    NECK_CENTER[0] + math.cos(a) * nrx * wide,
+                    neck_ring[c][1] - (t * 3.0 + ease * 5.8 * (1.0 - 0.4 * side)),
+                    NECK_CENTER[2] + math.sin(a) * nrz * deep,
+                ]
+            )
             out[r, c] = point
     return out
 
@@ -357,6 +466,56 @@ def build_ear(side):
             )
             grid[r, c] = point
     return grid
+
+
+def vertex_normals(points, indices):
+    tris = np.asarray(indices, dtype=np.int64).reshape(-1, 3)
+    a, b, c = points[tris[:, 0]], points[tris[:, 1]], points[tris[:, 2]]
+    face = np.cross(b - a, c - a)
+    normals = np.zeros_like(points)
+    for k in range(3):
+        np.add.at(normals, tris[:, k], face)
+    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+    return normals / np.maximum(lengths, 1e-9)
+
+
+def ambient_occlusion(points, indices, radius=7.0, strength=0.92, gauge=None):
+    """Point based occlusion: how much of the hemisphere other surface blocks.
+
+    Cheap and good enough to darken the eye sockets, under the jaw, the nape and
+    behind the ears, which is most of what sells the shading.
+    """
+    normals = vertex_normals(points, indices)
+    count = len(points)
+    occlusion = np.zeros(count)
+    chunk = 256
+    for start in range(0, count, chunk):
+        stop = min(count, start + chunk)
+        delta = points[None, :, :] - points[start:stop, None, :]
+        dist = np.linalg.norm(delta, axis=2)
+        near = (dist < radius) & (dist > 1e-4)
+        direction = delta / np.maximum(dist, 1e-6)[:, :, None]
+        facing = np.einsum("ijk,ik->ij", direction, normals[start:stop])
+        weight = np.clip(1.0 - dist / radius, 0, 1) ** 2
+        occlusion[start:stop] = np.sum(np.clip(facing, 0, 1) * weight * near, axis=1)
+    # Gauge on the head only: the ear bumps sit inside the skull and would
+    # otherwise set the scale for everything else.
+    sample = occlusion[:gauge] if gauge else occlusion
+    top = np.percentile(sample, 88) or 1.0
+    ao = 1.0 - strength * np.clip(occlusion / top, 0, 1)
+    # Soften across the surface so single vertices do not pop.
+    tris = np.asarray(indices, dtype=np.int64).reshape(-1, 3)
+    for _ in range(3):
+        total = np.zeros(count)
+        hits = np.zeros(count)
+        for i in range(3):
+            for j in range(3):
+                if i == j:
+                    continue
+                np.add.at(total, tris[:, i], ao[tris[:, j]])
+                np.add.at(hits, tris[:, i], 1)
+        ao = np.where(hits > 0, (ao + total / np.maximum(hits, 1)) / 2, ao)
+    return np.clip(ao, 0.12, 1.0)
 
 
 def grid_indices(offset, rows, cols, flip=False, wrap=False):
@@ -492,7 +651,18 @@ def main():
             "center": list(map(float, SKULL_CENTER)),
             "radii": list(map(float, SKULL_RADII)),
             "swirl": list(map(float, SWIRL_DIR / np.linalg.norm(SWIRL_DIR))),
+            "field": {
+                "az": AZ_STEPS,
+                "el": EL_STEPS,
+                "data": [round(float(v), 4) for v in shape_table().reshape(-1)],
+            },
         },
+        "ao": [
+            round(float(v), 3)
+            for v in ambient_occlusion(
+                np.array(positions), indices, gauge=ear_ranges[0]["start"]
+            )
+        ],
         "faceUv": [[float(u), float(v)] for u, v in face_uv],
         "landmarks": {
             "nose": 1,

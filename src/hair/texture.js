@@ -25,43 +25,38 @@ export function hairStripTexture() {
 
   for (let strip = 0; strip < HAIR_STRIPS; strip += 1) {
     const x0 = strip * STRIP_W;
-    // Denser strips for the inner layers, wispier ones for the silhouette.
-    const density = strip < 4 ? 46 : strip < 6 ? 30 : 18;
-    const spread = strip < 4 ? 0.9 : 1.0;
+    // A solid lock down the middle, soft at the edges. Thin lines read as spikes.
+    const body = ctx.createLinearGradient(x0, 0, x0 + STRIP_W, 0);
+    body.addColorStop(0, "rgba(160,160,160,0)");
+    body.addColorStop(0.14, "rgba(170,170,170,0.28)");
+    body.addColorStop(0.5, "rgba(205,205,205,0.62)");
+    body.addColorStop(0.86, "rgba(170,170,170,0.28)");
+    body.addColorStop(1, "rgba(160,160,160,0)");
+    ctx.fillStyle = body;
+    ctx.fillRect(x0, 0, STRIP_W, STRIP_H);
+    const tip = ctx.createLinearGradient(0, 0, 0, STRIP_H * 0.22);
+    tip.addColorStop(0, "rgba(0,0,0,0.85)");
+    tip.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = tip;
+    ctx.fillRect(x0, 0, STRIP_W, STRIP_H * 0.22);
+    const density = strip < 4 ? 28 : 16;
     for (let i = 0; i < density; i += 1) {
-      const startX = x0 + STRIP_W * (0.06 + 0.88 * rand(state));
-      const drift = (rand(state) - 0.5) * STRIP_W * 0.42 * spread;
-      const wobble = (rand(state) - 0.5) * STRIP_W * 0.3;
-      const tipRatio = 0.55 + 0.45 * rand(state);
-      const tone = 150 + Math.floor(rand(state) * 105);
-      const thickness = 1.5 + rand(state) * 2.6;
-      const segments = 26;
-      let prevX = startX;
-      let prevY = STRIP_H;
-      for (let s = 1; s <= segments; s += 1) {
-        const t = s / segments;
-        if (t > tipRatio) break;
-        const y = STRIP_H * (1 - t);
-        const x = startX + drift * t * t + wobble * Math.sin(t * Math.PI * 1.15);
-        const fade = Math.min(1, (tipRatio - t) / 0.22);
-        const alpha = Math.min(1, 0.34 + 0.66 * fade) * (0.55 + 0.45 * (1 - t * 0.6));
-        ctx.strokeStyle = `rgba(${tone},${tone},${tone},${alpha.toFixed(3)})`;
-        ctx.lineWidth = thickness * (1 - 0.72 * t);
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(prevX, prevY);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        prevX = x;
-        prevY = y;
-      }
+      const startX = x0 + STRIP_W * (0.12 + 0.76 * rand(state));
+      const drift = (rand(state) - 0.5) * STRIP_W * 0.22;
+      const tone = 90 + Math.floor(rand(state) * 140);
+      const thickness = 1.2 + rand(state) * 2.2;
+      ctx.strokeStyle = `rgba(${tone},${tone},${tone},0.55)`;
+      ctx.lineWidth = thickness;
+      ctx.beginPath();
+      ctx.moveTo(startX, STRIP_H);
+      ctx.quadraticCurveTo(
+        startX + drift * 0.4,
+        STRIP_H * 0.45,
+        startX + drift,
+        STRIP_H * (0.05 + rand(state) * 0.2)
+      );
+      ctx.stroke();
     }
-    // A soft root mat so cards do not show a hard cut where they meet the scalp.
-    const root = ctx.createLinearGradient(0, STRIP_H, 0, STRIP_H * 0.74);
-    root.addColorStop(0, "rgba(190,190,190,0.95)");
-    root.addColorStop(1, "rgba(190,190,190,0)");
-    ctx.fillStyle = root;
-    ctx.fillRect(x0 + STRIP_W * 0.08, STRIP_H * 0.74, STRIP_W * 0.84, STRIP_H * 0.26);
   }
 
   // The cap strip: opaque, with a little value noise so it is not flat.

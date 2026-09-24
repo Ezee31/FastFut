@@ -262,7 +262,7 @@ input[type="range"] { width: 100%; accent-color: var(--brass); }
 
 @media (max-width: 900px) {
   header { left: 10px; right: 10px; top: 10px; }
-  #panel { top: auto; left: 10px; right: 10px; bottom: 10px; width: auto; max-height: 44vh; }
+  #panel { top: auto; left: 10px; right: 10px; bottom: 10px; width: auto; max-height: 34vh; }
   #stage-ui { left: 10px; right: 10px; bottom: auto; top: 78px; }
   #cut-name strong { font-size: 22px; }
 }

@@ -44,6 +44,7 @@ export async function loadHead() {
   return {
     canonical,
     uv,
+    ao: data.ao ? new Float32Array(data.ao) : null,
     indices: new Uint32Array(data.indices),
     faceCount: data.faceCount,
     vertexCount: count,
@@ -187,8 +188,67 @@ export function applyBlink(faceSpace, amount) {
   }
 }
 
-export function smoothNormals(geometry) {
-  geometry.computeVertexNormals();
+/**
+ * The skull is an ellipsoid modulated by an anatomy field (flat temples,
+ * occipital bulge, nape tuck). The hair needs the same shape the mesh uses.
+ */
+export function skullField(skull) {
+  const table = skull.field;
+  const center = new THREE.Vector3(...skull.center);
+  const radii = new THREE.Vector3(...skull.radii);
+  const sample = (azimuth, elevation) => {
+    if (!table) return 1;
+    const { az, el, data } = table;
+    const fa = ((azimuth + 180) / 360) * az;
+    const fe = ((elevation + 90) / 180) * (el - 1);
+    const a0 = Math.floor(fa);
+    const e0 = Math.max(0, Math.min(el - 2, Math.floor(fe)));
+    const ta = fa - a0;
+    const te = fe - e0;
+    const at = (e, a) => data[e * az + ((a % az) + az) % az];
+    const top = at(e0, a0) * (1 - ta) + at(e0, a0 + 1) * ta;
+    const bottom = at(e0 + 1, a0) * (1 - ta) + at(e0 + 1, a0 + 1) * ta;
+    return top * (1 - te) + bottom * te;
+  };
+  const unit = new THREE.Vector3();
+  const factorFor = (point) => {
+    unit.copy(point).sub(center).divide(radii);
+    const length = unit.length();
+    if (length < 1e-6) return { factor: 1, length: 0 };
+    unit.divideScalar(length);
+    const azimuth = THREE.MathUtils.radToDeg(Math.atan2(unit.x, unit.z));
+    const elevation = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(unit.y, -1, 1)));
+    return { factor: sample(azimuth, elevation), length };
+  };
+  const surface = new THREE.Vector3();
+  const outward = new THREE.Vector3();
+  return {
+    center,
+    radii,
+    /** Nearest point on the skull along the direction from the centre. */
+    surfaceAt(point, target) {
+      const { factor } = factorFor(point);
+      return target.copy(unit).multiply(radii).multiplyScalar(factor).add(center);
+    },
+    /** Keeps a strand from sinking into the head. */
+    push(point, margin) {
+      const { factor, length } = factorFor(point);
+      if (length < 1e-6) return;
+      surface.copy(unit).multiply(radii).multiplyScalar(factor).add(center);
+      outward.copy(surface).sub(center).normalize();
+      const depth = point.distanceTo(center) - surface.distanceTo(center);
+      if (depth < margin) point.copy(surface).addScaledVector(outward, margin);
+    },
+    normalAt(point, target) {
+      return target
+        .set(
+          (point.x - center.x) / (radii.x * radii.x),
+          (point.y - center.y) / (radii.y * radii.y),
+          (point.z - center.z) / (radii.z * radii.z)
+        )
+        .normalize();
+    },
+  };
 }
 
 export function scalpSampler(head, positions) {

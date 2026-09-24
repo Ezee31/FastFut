@@ -4,10 +4,10 @@
  */
 const BASE = {
   lengthCm: 4.0,
-  widthCm: 1.5,
+  widthCm: 2.35,
   density: 1,
-  rings: 26,
-  perRing: 30,
+  rings: 28,
+  perRing: 36,
   napeV: 0.56,
   fadeLine: -0.12,
   fadeSlope: 0.18,
@@ -35,8 +35,8 @@ function style(id, name, detail, overrides) {
 
 export const STYLES = [
   style("actual", "Tu corte", "Rizado corto, degradado medio", {
-    lengthCm: 4.2, curl: 0.62, curlFreq: 2.2, volume: 0.42, fadeLine: 0.02,
-    styling: 0.3, lift: 0.34, widthCm: 1.35, perRing: 34, sheen: 0.4, seed: 3,
+    lengthCm: 4.2, curl: 0.55, curlFreq: 2.0, volume: 0.34, fadeLine: -0.02,
+    styling: 0.28, lift: 0.22, cling: 0.45, widthCm: 2.5, perRing: 40, sheen: 0.48, seed: 3,
   }),
   style("fade-alto", "Degradado alto", "Arriba texturizado, lados a piel", {
     lengthCm: 4.4, curl: 0.5, curlFreq: 2.0, volume: 0.46, fadeLine: 0.3,

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { skullField } from "../head.js";
 
 const SEGMENTS = 9;
 
@@ -23,32 +24,17 @@ function hairAmount(point, skull, style) {
   }
   // Nothing grows on the forehead or the temples.
   if (relZ > 0.25 && relY < -0.05) amount = 0;
+  // Short hair continues down the nape and thins out, instead of stopping
+  // on the occiput and leaving a hard edge above the neck.
+  if (relZ < -0.12 && relY < 0.05 && relY > -0.92) {
+    const down = Math.max(0, Math.min(1, (-0.05 - relY) / 0.85));
+    const nape = (1 - down) * 0.5 * Math.min(1, (-relZ - 0.12) / 0.45);
+    amount = Math.max(amount, nape);
+  }
   return amount;
 }
 
-function skullNormal(point, skull, target) {
-  return target
-    .set(
-      (point.x - skull.center[0]) / (skull.radii[0] * skull.radii[0]),
-      (point.y - skull.center[1]) / (skull.radii[1] * skull.radii[1]),
-      (point.z - skull.center[2]) / (skull.radii[2] * skull.radii[2])
-    )
-    .normalize();
-}
 
-function skullPush(point, skull, margin) {
-  const nx = (point.x - skull.center[0]) / (skull.radii[0] + margin);
-  const ny = (point.y - skull.center[1]) / (skull.radii[1] + margin);
-  const nz = (point.z - skull.center[2]) / (skull.radii[2] + margin);
-  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-  if (len >= 1) return;
-  const scale = 1 / Math.max(len, 1e-4);
-  point.set(
-    skull.center[0] + nx * scale * (skull.radii[0] + margin),
-    skull.center[1] + ny * scale * (skull.radii[1] + margin),
-    skull.center[2] + nz * scale * (skull.radii[2] + margin)
-  );
-}
 
 class Mesh {
   constructor() {
@@ -119,7 +105,7 @@ function capLift(style) {
  * The cap: an opaque layer just above the scalp so the hair reads as a mass
  * instead of separate ribbons. Game hair is built the same way.
  */
-function buildCap(head, sampler, style, mesh, capU) {
+function buildCap(head, sampler, style, mesh, capU, field) {
   const rows = 22;
   const cols = 72;
   const upper = head.shell.upperSpan;
@@ -135,7 +121,7 @@ function buildCap(head, sampler, style, mesh, capU) {
       const u = (c / (cols - 1)) * upper;
       const hit = sampler.sample(u, v);
       const amount = hairAmount(hit.position, skull, style);
-      skullNormal(hit.position, skull, normal);
+      field.normalAt(hit.position, normal);
       const point = hit.position.clone().addScaledVector(normal, lift * (0.35 + 0.65 * amount));
       flowAt(point, normal, skull, style, tangent);
       // Fade the cap at the hairline so the cards carry the edge.
@@ -175,66 +161,136 @@ function rootCandidates(head, style, random) {
   return list;
 }
 
+const DOWN = new THREE.Vector3(0, -1, 0);
+
+/** Walks one strand from the scalp: flow first, then gravity, then curl. */
+function walkStrand(root, style, field, skull, params, field_tmp) {
+  const { lengthCm, curlPhase, curlFreq, curlAmp, fringeDrop, front, sweep, lift, amount } = params;
+  const normal = field.normalAt(root, new THREE.Vector3());
+  const direction = flowAt(root, normal, skull, style, new THREE.Vector3());
+  if (front > 0) {
+    // A fringe sweeps outward, it does not hang in a straight line.
+    direction.addScaledVector(new THREE.Vector3(Math.sign(root.x) || 1, 0, 0), front * sweep);
+    direction.normalize();
+  }
+  const dir = direction.clone();
+  const side = new THREE.Vector3().crossVectors(dir, normal).normalize();
+  const localNormal = normal.clone();
+  const point = root.clone().addScaledVector(normal, lift * (0.3 + 0.7 * amount) + 0.06);
+  const segLength = lengthCm / SEGMENTS;
+  const rootY = root.y;
+  const path = [];
+  for (let s = 0; s <= SEGMENTS; s += 1) {
+    const t = s / SEGMENTS;
+    path.push({ point: point.clone(), dir: dir.clone(), side: side.clone(), normal: localNormal.clone() });
+    if (s === SEGMENTS) break;
+    point.addScaledVector(dir, segLength);
+    const wave = Math.sin(curlPhase + t * Math.PI * 2 * curlFreq) * curlAmp;
+    point.addScaledVector(side, wave * 0.5);
+    point.addScaledVector(localNormal, style.volume * segLength * 0.14 * (1 - t));
+    dir.addScaledVector(DOWN, style.gravity * 0.55 * (0.25 + t));
+    dir.addScaledVector(localNormal, -style.cling * 0.32);
+    dir.normalize();
+    field.push(point, 0.3 + style.volume * 0.9);
+    if (point.z > skull.center[2] + skull.radii[2] * 0.25) {
+      point.y = Math.max(point.y, rootY - fringeDrop);
+    }
+    field.normalAt(point, localNormal);
+    side.crossVectors(dir, localNormal).normalize();
+  }
+  return path;
+}
+
+function strandParams(style, random, amount, front, options = {}) {
+  const wisp = options.wisp ?? false;
+  const short = options.short ?? false;
+  let lengthCm = style.lengthCm * (0.45 + 0.65 * amount) * (0.82 + 0.36 * random());
+  if (wisp) lengthCm *= 1.35;
+  if (short) lengthCm *= 0.42;
+  const segLength = lengthCm / SEGMENTS;
+  return {
+    lengthCm,
+    amount,
+    front,
+    wisp,
+    curlPhase: random() * Math.PI * 2,
+    curlFreq: style.curlFreq * (0.85 + 0.3 * random()),
+    curlAmp: style.curl * Math.min(segLength * 2.4, lengthCm * 0.32),
+    fringeDrop:
+      (style.flow > 0.45 ? 3.2 : 1.0) * (0.5 + style.lengthCm * 0.12) * (0.7 + 0.6 * random()),
+    sweep: 0.25 + 0.5 * random(),
+    lift: capLift(style),
+  };
+}
+
 /** Builds the cap plus the hair cards for one style. */
 export function buildHair(head, positions, sampler, style, options = {}) {
   const random = makeRandom(style.seed ?? 7);
   const skull = head.skull;
+  const field = options.field ?? skullField(skull);
   const strips = options.strips ?? 9;
   const hairStrips = options.hairStrips ?? strips - 1;
   const capU = (hairStrips + 0.5) / strips;
   const mesh = new Mesh();
-  const center = new THREE.Vector3(...skull.center);
   const tmp = new THREE.Vector3();
   const mask = [];
 
-  buildCap(head, sampler, style, mesh, capU);
+  buildCap(head, sampler, style, mesh, capU, field);
 
-  const normal = new THREE.Vector3();
-  const direction = new THREE.Vector3();
-  const down = new THREE.Vector3(0, -1, 0);
+  // Clumps: real hair falls in locks, so every card is pulled toward the path of
+  // its nearest clump. Without this the cards read as separate ribbons.
+  const clumpCount = Math.max(8, Math.round(18 + style.lengthCm * 2.2));
+  const clumps = [];
+  for (let i = 0; i < clumpCount; i += 1) {
+    const u = random() * head.shell.upperSpan;
+    const v = random() * style.napeV * 0.85;
+    const hit = sampler.sample(u, v);
+    const amount = hairAmount(hit.position, skull, style);
+    if (amount <= 0.05) continue;
+    const relZ = (hit.position.z - skull.center[2]) / skull.radii[2];
+    const front = Math.max(0, Math.min(1, (relZ - 0.25) / 0.4));
+    const params = strandParams(style, random, amount, front);
+    clumps.push({ u, v, path: walkStrand(hit.position, style, field, skull, params) });
+  }
+
   for (const [u, v] of rootCandidates(head, style, random)) {
     if (random() > (style.density ?? 1)) continue;
     const hit = sampler.sample(u, v);
     const root = hit.position;
     const amount = hairAmount(root, skull, style);
     if (amount <= 0.05) continue;
-    skullNormal(root, skull, normal);
     const relZ = (root.z - skull.center[2]) / skull.radii[2];
-    // Break the hairline: a few short strands start below it, on the forehead.
     const front = Math.max(0, Math.min(1, (relZ - 0.25) / 0.4));
-    const ragged = front > 0 && v < 0.05 ? random() : 1;
-    if (ragged < 0.45) {
-      root.addScaledVector(hit.alongV, -(0.25 + random() * 0.55));
-    }
-    // Wisps: longer, thinner cards that carry the silhouette.
-    const wisp = random() < 0.22;
-
-    let lengthCm = style.lengthCm * (0.45 + 0.65 * amount) * (0.8 + 0.4 * random());
-    if (wisp) lengthCm *= 1.35;
-    if (ragged < 0.45) lengthCm *= 0.42;
-    if (style.backMul !== 1 && relZ < 0) {
-      lengthCm *= 1 + (style.backMul - 1) * Math.min(1, -relZ);
-    }
-    if (lengthCm < 0.15) continue;
+    // Break the hairline: a few short strands start below it, on the forehead.
+    const short = front > 0 && v < 0.05 && random() < 0.45;
+    if (short) root.addScaledVector(hit.alongV, -(0.25 + random() * 0.55));
+    const wisp = random() < 0.24;
+    const params = strandParams(style, random, amount, front, { wisp, short });
+    if (params.lengthCm < 0.15) continue;
     mask.push([u, v, amount]);
 
-    flowAt(root, normal, skull, style, direction);
-    if (front > 0) {
-      // A fringe sweeps outward, it does not hang in a straight line.
-      direction.addScaledVector(
-        new THREE.Vector3(Math.sign(root.x) || 1, 0, 0),
-        front * (0.25 + 0.5 * random())
-      );
-      direction.normalize();
+    const path = walkStrand(root, style, field, skull, params);
+    // Converge toward the clump, more as the strand gets further from the root.
+    let clump = null;
+    let best = Infinity;
+    for (const candidate of clumps) {
+      const du = candidate.u - u;
+      const dv = candidate.v - v;
+      const distance = du * du + dv * dv * 4;
+      if (distance < best) {
+        best = distance;
+        clump = candidate;
+      }
     }
-    const side = new THREE.Vector3().crossVectors(direction, normal).normalize();
-    const localNormal = normal.clone();
-    const dir = direction.clone();
-    const segLength = lengthCm / SEGMENTS;
-    const curlPhase = random() * Math.PI * 2;
-    const curlAmp = style.curl * Math.min(segLength * 2.4, lengthCm * 0.32);
-    const curlFreq = style.curlFreq * (0.8 + 0.4 * random());
-    const widthCm = style.widthCm * (wisp ? 0.5 + 0.3 * random() : 0.75 + 0.55 * random());
+    const converge = clump && !wisp ? Math.max(0, 0.42 - best * 1.6) : 0;
+
+    const widthCm =
+      style.widthCm *
+      (0.4 + 0.6 * Math.min(1, amount * 1.4)) *
+      (wisp ? 0.55 + 0.25 * random() : 0.85 + 0.4 * random());
+    // Roll the card around the growth direction. Flat cards disappear when the
+    // camera looks at their edge, which is what made the hair read as spikes.
+    const roll = (random() - 0.5) * (wisp ? 0.9 : 0.55);
     const strip = wisp
       ? hairStrips - 2 + Math.floor(random() * 2)
       : Math.min(hairStrips - 3, Math.floor(random() * (hairStrips - 2)));
@@ -243,45 +299,22 @@ export function buildHair(head, positions, sampler, style, options = {}) {
     const tint = 0.85 + 0.3 * random();
     const shade = 0.68 + 0.4 * amount;
     const twist = (random() - 0.5) * 0.7;
-    const fringeDrop =
-      (style.flow > 0.45 ? 3.2 : 1.0) * (0.5 + style.lengthCm * 0.12) * (0.7 + 0.6 * random());
-    const rootY = root.y;
-    // Start a touch above the cap so cards never sink into it.
-    const lift = capLift(style);
-    const point = root
-      .clone()
-      .addScaledVector(normal, lift * (0.3 + 0.7 * amount) + (wisp ? 0.22 : 0.06));
 
     let previous = null;
     for (let s = 0; s <= SEGMENTS; s += 1) {
       const t = s / SEGMENTS;
-      const width = widthCm * (1 - 0.6 * Math.pow(t, 1.4));
-      const offset = side
-        .clone()
-        .multiplyScalar(width * 0.5)
-        .addScaledVector(localNormal, twist * width * t * 0.5);
-      const left = tmp.copy(point).sub(offset);
-      const a = mesh.push(left, stripU0, t, dir, shade, tint, 1);
-      const right = tmp.copy(point).add(offset);
-      const b = mesh.push(right, stripU1, t, dir, shade, tint, 1);
+      const frame = path[s];
+      const point = frame.point.clone();
+      if (converge > 0) point.lerp(clump.path[s].point, converge * t * t);
+      const width = widthCm * (1 - 0.45 * Math.pow(t, 1.2));
+      const facing = frame.side.clone().multiplyScalar(Math.cos(roll)).addScaledVector(frame.normal, Math.sin(roll));
+      if (facing.lengthSq() < 1e-6) facing.copy(frame.side);
+      facing.normalize();
+      const offset = facing.multiplyScalar(width * 0.5).addScaledVector(frame.normal, twist * width * t * 0.25);
+      const a = mesh.push(tmp.copy(point).sub(offset), stripU0, t, frame.dir, shade, tint, 1);
+      const b = mesh.push(tmp.copy(point).add(offset), stripU1, t, frame.dir, shade, tint, 1);
       if (previous) mesh.quad(previous[0], previous[1], a, b);
       previous = [a, b];
-
-      if (s < SEGMENTS) {
-        point.addScaledVector(dir, segLength);
-        const wave = Math.sin(curlPhase + t * Math.PI * 2 * curlFreq) * curlAmp;
-        point.addScaledVector(side, wave * 0.5);
-        point.addScaledVector(localNormal, style.volume * segLength * 0.3 * (1 - t));
-        dir.addScaledVector(down, style.gravity * 0.4 * (0.3 + t));
-        dir.addScaledVector(localNormal, -style.cling * 0.18);
-        dir.normalize();
-        skullPush(point, skull, 0.3 + style.volume * 0.9);
-        if (point.z > skull.center[2] + skull.radii[2] * 0.25) {
-          point.y = Math.max(point.y, rootY - fringeDrop);
-        }
-        skullNormal(point, skull, localNormal);
-        side.crossVectors(dir, localNormal).normalize();
-      }
     }
   }
 

@@ -21,7 +21,7 @@ def rotation(yaw, pitch):
     return rp @ ry
 
 
-def render(pos, tris, yaw, pitch, size=520, label=""):
+def render(pos, tris, yaw, pitch, size=520, label="", ao=None):
     rot = rotation(np.radians(yaw), np.radians(pitch))
     p = pos @ rot.T
     center = (p.min(0) + p.max(0)) / 2
@@ -47,6 +47,8 @@ def render(pos, tris, yaw, pitch, size=520, label=""):
             continue
         tri = tris[t]
         tone = shade[t]
+        if ao is not None:
+            tone *= float(ao[tri].mean())
         color = (int(212 * tone), int(168 * tone), int(150 * tone))
         draw.polygon(
             [(sx[tri[0]], sy[tri[0]]), (sx[tri[1]], sy[tri[1]]), (sx[tri[2]], sy[tri[2]])],
@@ -64,10 +66,11 @@ def main():
         head = json.load(handle)
     pos = np.array(head["positions"], dtype=np.float64)
     tris = np.array(head["indices"], dtype=np.int64).reshape(-1, 3)
+    ao = np.array(head["ao"], dtype=np.float64) if "ao" in head else None
     views = [("frente", 0, 0), ("tres-cuartos", 38, 6), ("perfil", 90, 0), ("nuca", 180, 0), ("arriba", 0, 70)]
     tiles = []
     for name, yaw, pitch in views:
-        img = render(pos, tris, yaw, pitch, label=name)
+        img = render(pos, tris, yaw, pitch, label=name, ao=ao)
         img.save(os.path.join(out_dir, f"head-{name}.png"))
         tiles.append(np.array(img))
     sheet = np.concatenate(tiles, axis=1)

@@ -3,7 +3,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { createOrbit } from "./orbit.js";
 import { STYLES, HAIR_COLORS, fadeLabel } from "./styles.js";
 import { loadHead, landmarksToPoints, fitToCanonical, applyShape, applyBlink } from "./head.js";
-import { scalpSampler } from "./head.js";
+import { scalpSampler, skullField } from "./head.js";
 import { bakeAtlas } from "./atlas.js";
 import { hairStripTexture } from "./hair/texture.js";
 import { createHairMaterials } from "./hair/material.js";
@@ -20,8 +20,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = false;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#0d0c0b");
@@ -32,13 +33,55 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.05).texture;
 scene.environmentIntensity = 0.42;
 
-const keyLight = new THREE.DirectionalLight("#fff1dd", 2.35);
-keyLight.position.set(-16, 22, 26);
-const fillLight = new THREE.DirectionalLight("#bfd0ff", 0.55);
-fillLight.position.set(20, 4, 14);
-const rimLight = new THREE.DirectionalLight("#ffd3a1", 1.5);
-rimLight.position.set(4, 16, -26);
-scene.add(keyLight, fillLight, rimLight, new THREE.AmbientLight("#4b433a", 0.5));
+const keyLight = new THREE.DirectionalLight("#fff1dd", 2.5);
+keyLight.position.set(-18, 24, 28);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.near = 8;
+keyLight.shadow.camera.far = 90;
+keyLight.shadow.camera.left = -26;
+keyLight.shadow.camera.right = 26;
+keyLight.shadow.camera.top = 26;
+keyLight.shadow.camera.bottom = -26;
+keyLight.shadow.bias = -0.0006;
+keyLight.shadow.normalBias = 0.06;
+keyLight.shadow.radius = 3;
+const fillLight = new THREE.DirectionalLight("#bfd0ff", 0.5);
+fillLight.position.set(22, 4, 14);
+const rimLight = new THREE.DirectionalLight("#ffd3a1", 1.7);
+rimLight.position.set(5, 17, -28);
+scene.add(keyLight, fillLight, rimLight, new THREE.AmbientLight("#4b433a", 0.45));
+
+// Studio backdrop: a lit wall behind, falling off to the sides.
+const backdrop = new THREE.Mesh(
+  new THREE.SphereGeometry(180, 32, 24),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {},
+    vertexShader: /* glsl */ `
+      varying vec3 vLocal;
+      void main() {
+        vLocal = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vLocal;
+      void main() {
+        vec3 dir = normalize(vLocal);
+        float height = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+        float centre = smoothstep(0.35, 1.0, dir.z * 0.5 + 0.5);
+        vec3 far = vec3(0.035, 0.032, 0.030);
+        vec3 near = vec3(0.115, 0.098, 0.086);
+        vec3 colour = mix(far, near, centre * (0.35 + 0.65 * height));
+        gl_FragColor = vec4(colour, 1.0);
+      }
+    `,
+  })
+);
+backdrop.frustumCulled = false;
+scene.add(backdrop);
 
 const rig = new THREE.Group();
 scene.add(rig);
@@ -102,6 +145,7 @@ function buildMesh() {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(state.positions, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(head.uv, 2));
+  if (head.ao) geometry.setAttribute("headAo", new THREE.BufferAttribute(head.ao, 1));
   geometry.setIndex(new THREE.BufferAttribute(head.indices, 1));
   geometry.computeVertexNormals();
   state.geometry = geometry;
@@ -116,23 +160,36 @@ function buildMesh() {
     clearcoat: 0,
     side: THREE.FrontSide,
   });
-  const maskUniform = { value: null };
+  const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  white.needsUpdate = true;
+  white.colorSpace = THREE.NoColorSpace;
+  const maskUniform = { value: white };
   skin.onBeforeCompile = (shader) => {
     shader.uniforms.uHairMask = maskUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute float headAo;\nvarying float vHeadAo;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvHeadAo = headAo;");
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform sampler2D uHairMask;")
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying float vHeadAo;\nuniform sampler2D uHairMask;"
+      )
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
+        diffuseColor.rgb *= mix(vec3(0.8), vec3(1.0), clamp(vHeadAo, 0.0, 1.0));
         #ifdef USE_MAP
         diffuseColor.rgb *= texture2D(uHairMask, vMapUv).rgb;
         #endif`
       );
   };
+  skin.customProgramCacheKey = () => "head-ao-mask";
   state.skin = skin;
   state.skinUniforms = maskUniform;
   state.mesh = new THREE.Mesh(geometry, skin);
   state.mesh.frustumCulled = false;
+  state.mesh.castShadow = true;
+  state.mesh.receiveShadow = true;
   rig.add(state.mesh);
 }
 
@@ -251,6 +308,7 @@ function rebuildHair() {
   state.hairBlend = new THREE.Mesh(built.geometry, state.hairMaterials.blended);
   state.hairSolid.frustumCulled = false;
   state.hairBlend.frustumCulled = false;
+  state.hairSolid.castShadow = true;
   state.hairBlend.renderOrder = 3;
   rig.add(state.hairSolid, state.hairBlend);
   const mask = hairMaskTexture(state.head, built.mask, style);
@@ -291,7 +349,10 @@ function frameCamera() {
   }
   const chin = positions[152 * 3 + 1];
   const crown = top + 9;
-  orbit.frame((crown + chin) / 2, (crown - chin) * 1.4);
+  const narrow = window.innerWidth <= 900;
+  // On a phone the panel covers the bottom, so the head sits in the free space.
+  const center = (crown + chin) / 2 - (narrow ? (crown - chin) * 0.28 : 0);
+  orbit.frame(center, (crown - chin) * (narrow ? 1.15 : 1.4));
 }
 
 const VIEWS = [
@@ -500,6 +561,7 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (state.positions) frameCamera();
 });
 
 window.__debug = state;
