@@ -141,7 +141,9 @@ function buildCap(head, sampler, style, mesh, capU) {
       // Fade the cap at the hairline so the cards carry the edge.
       const relZ = (hit.position.z - skull.center[2]) / skull.radii[2];
       const front = Math.max(0, Math.min(1, (relZ - 0.1) / 0.4));
-      const hairline = Math.min(1, v / 0.05);
+      // Wobble the edge per column so the hairline is not a drawn line.
+      const wobble = 0.035 + 0.05 * (0.5 + 0.5 * Math.sin(c * 2.7) * Math.cos(c * 0.9));
+      const hairline = Math.min(1, v / wobble);
       const alpha = amount > 0.04 ? Math.min(1, amount * 1.6) * (1 - front * (1 - hairline)) : 0;
       const id = mesh.push(point, capU, 0.4, tangent, 0.78, 1, alpha);
       line.push(id);
@@ -217,6 +219,14 @@ export function buildHair(head, positions, sampler, style, options = {}) {
     mask.push([u, v, amount]);
 
     flowAt(root, normal, skull, style, direction);
+    if (front > 0) {
+      // A fringe sweeps outward, it does not hang in a straight line.
+      direction.addScaledVector(
+        new THREE.Vector3(Math.sign(root.x) || 1, 0, 0),
+        front * (0.25 + 0.5 * random())
+      );
+      direction.normalize();
+    }
     const side = new THREE.Vector3().crossVectors(direction, normal).normalize();
     const localNormal = normal.clone();
     const dir = direction.clone();
@@ -292,7 +302,7 @@ export function hairMaskTexture(head, mask, style) {
   const y0 = (1 - rect[1] - rect[3]) * size;
   const w = rect[2] * size;
   const h = rect[3] * size;
-  const strength = Math.min(0.9, 0.35 + style.lengthCm * 0.2);
+  const strength = Math.min(1, 0.5 + style.lengthCm * 0.22);
   ctx.save();
   ctx.beginPath();
   ctx.rect(x0, y0, w, h);
@@ -301,7 +311,7 @@ export function hairMaskTexture(head, mask, style) {
     const px = x0 + u * w;
     const py = y0 + v * h;
     const radius = 6 + 10 * amount;
-    const alpha = 0.2 * strength * (0.4 + amount);
+    const alpha = 0.26 * strength * (0.4 + amount);
     const gradient = ctx.createRadialGradient(px, py, 0, px, py, radius);
     gradient.addColorStop(0, `rgba(26,19,16,${alpha.toFixed(3)})`);
     gradient.addColorStop(1, "rgba(26,19,16,0)");

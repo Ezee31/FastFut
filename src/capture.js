@@ -30,6 +30,17 @@ export async function startScan({ state, trackImage, useCaptures, status }) {
   dots.innerHTML = STEPS.map((step) => `<i data-id="${step.id}"></i>`).join("");
   hint.textContent = "Pedí permiso a la cámara…";
 
+  const captures = [];
+  let index = 0;
+  let held = 0;
+  let cancelled = false;
+  const cancel = document.querySelector("#scan-cancel");
+  const onCancel = () => {
+    cancelled = true;
+    panel.classList.add("hidden");
+  };
+  cancel.addEventListener("click", onCancel);
+
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -40,18 +51,12 @@ export async function startScan({ state, trackImage, useCaptures, status }) {
     hint.textContent = "No pude abrir la cámara. Podés subir fotos.";
     return;
   }
+  if (cancelled) {
+    for (const track of stream.getTracks()) track.stop();
+    return;
+  }
   video.srcObject = stream;
   await video.play();
-
-  const captures = [];
-  let index = 0;
-  let held = 0;
-  let cancelled = false;
-  const cancel = document.querySelector("#scan-cancel");
-  const onCancel = () => {
-    cancelled = true;
-  };
-  cancel.addEventListener("click", onCancel, { once: true });
 
   const stop = () => {
     for (const track of stream.getTracks()) track.stop();
