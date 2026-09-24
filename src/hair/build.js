@@ -46,16 +46,18 @@ class Mesh {
     this.shade = [];
     this.tint = [];
     this.alpha = [];
+    this.scalp = [];
     this.index = [];
   }
 
-  push(point, u, v, tangent, shade, tint, alpha) {
+  push(point, u, v, tangent, shade, tint, alpha, scalpU = 0, scalpV = 0) {
     this.position.push(point.x, point.y, point.z);
     this.uv.push(u, v);
     this.tangent.push(tangent.x, tangent.y, tangent.z);
     this.shade.push(shade);
     this.tint.push(tint);
     this.alpha.push(alpha);
+    this.scalp.push(scalpU, scalpV);
     return this.position.length / 3 - 1;
   }
 
@@ -71,6 +73,7 @@ class Mesh {
     geometry.setAttribute("cardShade", new THREE.Float32BufferAttribute(this.shade, 1));
     geometry.setAttribute("cardTint", new THREE.Float32BufferAttribute(this.tint, 1));
     geometry.setAttribute("cardAlpha", new THREE.Float32BufferAttribute(this.alpha, 1));
+    geometry.setAttribute("scalpUv", new THREE.Float32BufferAttribute(this.scalp, 2));
     geometry.setIndex(this.index);
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
@@ -114,43 +117,52 @@ function buildCap(head, sampler, style, mesh, capU, field, mask) {
   const skull = head.skull;
   const normal = new THREE.Vector3();
   const tangent = new THREE.Vector3();
-  const grid = [];
   // Start above the face oval. Row 0 of the shell is the forehead, and a
   // hair shell that begins there cuts the brow with a black polygon.
   const v0 = style.flow > 0.55 ? 0.012 : 0.05;
   const hover = 0.06 + style.volume * 0.16;
-  for (let r = 0; r < rows; r += 1) {
-    const v = v0 + (r / (rows - 1)) * Math.max(0.05, style.napeV - v0);
-    const line = [];
-    for (let c = 0; c < cols; c += 1) {
-      const u = (c / (cols - 1)) * upper;
-      const hit = sampler.sample(u, v);
-      const amount = hairAmount(hit.position, skull, style);
-      field.normalAt(hit.position, normal);
-      const point = hit.position.clone().addScaledVector(
-        normal,
-        hover + amount * (0.1 + style.volume * 0.28)
-      );
-      flowAt(point, normal, skull, style, tangent);
-      const wave = 0.01 * Math.sin(c * 0.37);
-      const grow = Math.max(0, Math.min(1, (v - v0 - wave) / 0.16));
-      const soft = grow * grow * (3 - 2 * grow);
-      const alpha = amount <= 0.03 ? 0 : Math.min(0.96, amount * 1.5) * soft;
-      if (mask && c % 4 === 0 && amount > 0.08) mask.push([u, v, amount]);
-      // Repeat the cap grain around the head so the shell reads as hair, not a flat lid.
-      // Stay in the opaque middle of the cap strip. The soft sides are for
-      // ribbons; sampling them around the head cuts the shell into chunks.
-      const grain = ((c * 5) % cols) / cols;
-      const half = (1 - capU) * 0.28;
-      const capTexU = capU + (grain - 0.5) * 2 * half;
-      const id = mesh.push(point, capTexU, r / (rows - 1), tangent, 0.9, 1, alpha);
-      line.push(id);
+  // Inner shell is the cut. Outer shell sits a little off it so the hair has thickness.
+  const layers = [
+    { extra: 0, alphaScale: 1, shift: 0 },
+    { extra: 0.12 + style.volume * 0.18, alphaScale: 0.4, shift: 0.41 },
+  ];
+  for (const layer of layers) {
+    const grid = [];
+    for (let r = 0; r < rows; r += 1) {
+      const v = v0 + (r / (rows - 1)) * Math.max(0.05, style.napeV - v0);
+      const line = [];
+      for (let c = 0; c < cols; c += 1) {
+        const u = (c / (cols - 1)) * upper;
+        const hit = sampler.sample(u, v);
+        const amount = hairAmount(hit.position, skull, style);
+        field.normalAt(hit.position, normal);
+        const point = hit.position.clone().addScaledVector(
+          normal,
+          hover + layer.extra + amount * (0.1 + style.volume * 0.28)
+        );
+        flowAt(point, normal, skull, style, tangent);
+        const wave = 0.012 * Math.sin(c * 0.37 + layer.shift * 6);
+        const grow = Math.max(0, Math.min(1, (v - v0 - wave) / 0.22));
+        const soft = grow * grow * (3 - 2 * grow);
+        let alpha = amount <= 0.03 ? 0 : Math.min(0.96, amount * 1.35) * soft;
+        // The outer coat only covers where the hair is long, so the fade stays one soft edge.
+        if (layer.extra > 0) alpha = amount > 0.5 ? alpha * layer.alphaScale : 0;
+        if (mask && layer.extra === 0 && c % 4 === 0 && amount > 0.08) mask.push([u, v, amount]);
+        const grain = ((c * 5) % cols) / cols;
+        const half = (1 - capU) * 0.28;
+        const capTexU = capU + (grain - 0.5) * 2 * half;
+        const id = mesh.push(
+          point, capTexU, r / (rows - 1), tangent, 0.9, 1, alpha,
+          u + layer.shift, v
+        );
+        line.push(id);
+      }
+      grid.push(line);
     }
-    grid.push(line);
-  }
-  for (let r = 0; r < rows - 1; r += 1) {
-    for (let c = 0; c < cols - 1; c += 1) {
-      mesh.quad(grid[r][c], grid[r][c + 1], grid[r + 1][c], grid[r + 1][c + 1]);
+    for (let r = 0; r < rows - 1; r += 1) {
+      for (let c = 0; c < cols - 1; c += 1) {
+        mesh.quad(grid[r][c], grid[r][c + 1], grid[r + 1][c], grid[r + 1][c + 1]);
+      }
     }
   }
 }

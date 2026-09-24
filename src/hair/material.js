@@ -5,7 +5,9 @@ attribute vec3 cardTangent;
 attribute float cardShade;
 attribute float cardTint;
 attribute float cardAlpha;
+attribute vec2 scalpUv;
 varying vec2 vUv;
+varying vec2 vScalp;
 varying vec3 vNormal;
 varying vec3 vTangent;
 varying vec3 vView;
@@ -16,6 +18,7 @@ varying float vAlpha;
 
 void main() {
   vUv = uv;
+  vScalp = scalpUv;
   vAlpha = cardAlpha;
   vNormal = normalize(normalMatrix * normal);
   vTangent = normalize(normalMatrix * cardTangent);
@@ -53,6 +56,13 @@ varying float vShade;
 varying float vTint;
 varying float vAlong;
 varying float vAlpha;
+varying vec2 vScalp;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
 
 float strandSpec(vec3 t, vec3 n, vec3 l, vec3 v, float shift, float power) {
   vec3 tt = normalize(t + n * shift);
@@ -71,6 +81,21 @@ float strandDiffuse(vec3 t, vec3 l) {
 void main() {
   vec4 strip = texture2D(uStrips, vUv);
   float alpha = strip.a * vAlpha * uOpacity;
+
+  // Fibers across the shell, and a broken edge so the hairline is not a cut mesh.
+  float fibers = 0.0;
+  if (vScalp.x + vScalp.y > 0.001) {
+    float col = vScalp.x * 160.0;
+    float id = floor(col);
+    float across = fract(col);
+    float strandMask = smoothstep(0.42, 0.08, abs(across - 0.5));
+    fibers = strandMask * step(0.28, hash12(vec2(id, floor(vScalp.y * 18.0))));
+    // Fine dither on the contour. Coarse fiber holes read as polygon teeth.
+    float fuzz = hash12(vScalp * vec2(220.0, 80.0));
+    fuzz = fuzz * 0.6 + hash12(vScalp * vec2(48.0, 20.0) + 3.1) * 0.4;
+    float rim = smoothstep(0.9, 0.2, alpha);
+    alpha *= mix(1.0, smoothstep(0.08, 0.62, fuzz), rim);
+  }
   if (alpha < uAlphaTest || alpha >= uAlphaMax) discard;
 
   vec3 n = normalize(vNormal);
@@ -80,8 +105,9 @@ void main() {
 
   // Strand value from the card texture keeps the drawn variation.
   float strand = 0.45 + 0.55 * strip.r;
+  strand = max(strand, fibers);
   vec3 albedo = mix(uRoot, uTip, clamp(vAlong * 1.15, 0.0, 1.0));
-  albedo *= 0.80 + 0.40 * strand;
+  albedo *= 0.72 + 0.46 * strand;
   albedo *= vTint;
   // Roots sit in shadow, tips catch light.
   float occlusion = mix(0.72, 1.0, clamp(vAlong * 1.1 + 0.15, 0.0, 1.0)) * vShade;

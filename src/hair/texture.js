@@ -69,14 +69,15 @@ export function hairStripTexture() {
   capBody.addColorStop(1, "rgba(150,150,150,0)");
   ctx.fillStyle = capBody;
   ctx.fillRect(capX, 0, STRIP_W, STRIP_H);
-  for (let i = 0; i < 70; i += 1) {
-    const x = capX + STRIP_W * (0.08 + 0.84 * rand(state));
-    const tone = 70 + Math.floor(rand(state) * 150);
-    ctx.strokeStyle = `rgba(${tone},${tone},${tone},0.55)`;
-    ctx.lineWidth = 1 + rand(state) * 1.6;
+  for (let i = 0; i < 90; i += 1) {
+    const x = capX + STRIP_W * (0.2 + 0.6 * rand(state));
+    const dark = rand(state) > 0.45;
+    const tone = dark ? 30 + Math.floor(rand(state) * 40) : 200 + Math.floor(rand(state) * 40);
+    ctx.strokeStyle = `rgba(${tone},${tone},${tone},${dark ? 0.7 : 0.45})`;
+    ctx.lineWidth = dark ? 1.2 : 0.8;
     ctx.beginPath();
     ctx.moveTo(x, STRIP_H);
-    ctx.lineTo(x + (rand(state) - 0.5) * 18, 0);
+    ctx.lineTo(x + (rand(state) - 0.5) * 10, 0);
     ctx.stroke();
   }
 

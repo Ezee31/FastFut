@@ -466,9 +466,14 @@ def build_ear(side):
             # Helix: a rim around the upper and back edge, not a smooth egg.
             rim = math.exp(-((outward - 0.05) ** 2) / 0.22) * max(0.0, 0.25 + y)
             # Concha: the bowl you see on the outside of a real ear.
-            bowl = math.exp(-((outward - 0.72) ** 2) / 0.08 - ((y + 0.05) ** 2) / 0.18)
-            protrude = 0.15 + 1.25 * max(0.0, outward) + 0.7 * rim
-            protrude -= 0.85 * bowl * max(0.0, outward)
+            bowl = math.exp(-((outward - 0.72) ** 2) / 0.07 - ((y + 0.02) ** 2) / 0.14)
+            # Antihelix: the Y-shaped ridge inside the bowl.
+            anti = math.exp(-((outward - 0.42) ** 2) / 0.03) * math.exp(-((y - 0.2) ** 2) / 0.16)
+            anti *= max(0.0, 0.35 + forward * 0.8)
+            crus = math.exp(-((outward - 0.48) ** 2) / 0.025) * math.exp(-((y - 0.55) ** 2) / 0.06)
+            protrude = 0.15 + 1.25 * max(0.0, outward) + 0.85 * rim
+            protrude += 0.55 * anti + 0.4 * crus
+            protrude -= 1.15 * bowl * max(0.0, outward)
             # The lobe hangs, rounds off and sits closer to the head.
             lobe = max(0.0, -y)
             protrude *= 1.0 - 0.4 * lobe

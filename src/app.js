@@ -152,12 +152,13 @@ function buildMesh() {
 
   const skin = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    roughness: 0.78,
+    roughness: 0.62,
     metalness: 0,
-    sheen: 0.18,
-    sheenRoughness: 0.95,
-    sheenColor: new THREE.Color("#ffd6c4"),
-    clearcoat: 0,
+    sheen: 0.28,
+    sheenRoughness: 0.72,
+    sheenColor: new THREE.Color("#ffd0b8"),
+    clearcoat: 0.14,
+    clearcoatRoughness: 0.48,
     side: THREE.FrontSide,
   });
   const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
@@ -181,6 +182,12 @@ function buildMesh() {
         #ifdef USE_MAP
         diffuseColor.rgb *= texture2D(uHairMask, vMapUv).rgb;
         #endif`
+      )
+      .replace(
+        "#include <opaque_fragment>",
+        `float skinRim = pow(1.0 - saturate(dot(normalize(normal), normalize(vViewPosition))), 2.4);
+        outgoingLight += vec3(0.28, 0.14, 0.09) * skinRim * 0.55;
+        #include <opaque_fragment>`
       );
   };
   skin.customProgramCacheKey = () => "head-ao-mask";
