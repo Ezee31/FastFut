@@ -59,16 +59,25 @@ export function hairStripTexture() {
     }
   }
 
-  // The cap strip: opaque, with a little value noise so it is not flat.
+  // The cap strip is the short-hair mass: dense strands, soft at the sides.
   const capX = HAIR_STRIPS * STRIP_W;
-  ctx.fillStyle = "rgba(170,170,170,1)";
+  const capBody = ctx.createLinearGradient(capX, 0, capX + STRIP_W, 0);
+  capBody.addColorStop(0, "rgba(150,150,150,0)");
+  capBody.addColorStop(0.12, "rgba(160,160,160,0.75)");
+  capBody.addColorStop(0.5, "rgba(185,185,185,1)");
+  capBody.addColorStop(0.88, "rgba(160,160,160,0.75)");
+  capBody.addColorStop(1, "rgba(150,150,150,0)");
+  ctx.fillStyle = capBody;
   ctx.fillRect(capX, 0, STRIP_W, STRIP_H);
-  for (let i = 0; i < 2600; i += 1) {
-    const x = capX + rand(state) * STRIP_W;
-    const y = rand(state) * STRIP_H;
-    const tone = 120 + Math.floor(rand(state) * 110);
-    ctx.fillStyle = `rgba(${tone},${tone},${tone},0.5)`;
-    ctx.fillRect(x, y, 1 + rand(state) * 2, 6 + rand(state) * 26);
+  for (let i = 0; i < 70; i += 1) {
+    const x = capX + STRIP_W * (0.08 + 0.84 * rand(state));
+    const tone = 70 + Math.floor(rand(state) * 150);
+    ctx.strokeStyle = `rgba(${tone},${tone},${tone},0.55)`;
+    ctx.lineWidth = 1 + rand(state) * 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x, STRIP_H);
+    ctx.lineTo(x + (rand(state) - 0.5) * 18, 0);
+    ctx.stroke();
   }
 
   const texture = new THREE.CanvasTexture(canvas);

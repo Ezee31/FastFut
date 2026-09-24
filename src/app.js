@@ -348,11 +348,19 @@ function frameCamera() {
     top = Math.max(top, positions[i * 3 + 1]);
   }
   const chin = positions[152 * 3 + 1];
-  const crown = top + 9;
+  const crown = top + 8;
+  const span = crown - chin;
   const narrow = window.innerWidth <= 900;
-  // On a phone the panel covers the bottom, so the head sits in the free space.
-  const center = (crown + chin) / 2 - (narrow ? (crown - chin) * 0.28 : 0);
-  orbit.frame(center, (crown - chin) * (narrow ? 1.15 : 1.4));
+  if (!narrow) {
+    orbit.frame((crown + chin) / 2, span * 1.35);
+    return;
+  }
+  // The face sits in the band between the top bar and the sheet.
+  const topBar = 68;
+  const sheet = window.innerHeight * 0.3 + 72;
+  const freeMid = (topBar + (window.innerHeight - sheet)) / 2;
+  const fraction = (window.innerHeight / 2 - freeMid) / window.innerHeight;
+  orbit.frame((crown + chin) / 2 - fraction * span * 1.55, span * 1.22);
 }
 
 const VIEWS = [

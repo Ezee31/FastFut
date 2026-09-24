@@ -47,6 +47,9 @@ SKULL_SHAPE = [
     ("inion", 180, -16, 34, 14, 0.028),
     ("mastoid", 102, -6, 20, 16, 0.03),
     ("mastoid", -102, -6, 20, 16, 0.03),
+    # A shallow seat so the pinna root sinks into the side of the head.
+    ("ear-seat", 96, 2, 16, 20, -0.045),
+    ("ear-seat", -96, 2, 16, 20, -0.045),
     # A gentle tuck into the neck, wide enough that it does not pinch into a V.
     ("nape", 180, -40, 62, 18, -0.055),
     ("crown", 170, 76, 110, 22, -0.018),
@@ -442,28 +445,51 @@ def build_neck(verts, cranium_grid):
 
 
 def build_ear(side):
-    """A closed ear bump: a squashed ellipsoid that sinks into the skull.
+    """A pinna that sticks out past the skull and reads in profile.
 
-    A full ear needs an authored mesh; a smooth bump reads correctly in
-    silhouette and never pokes through the cheek.
+    The tragion on the canonical face sits at about (±7.66, 0.67, -2.44). The
+    old ear was buried inside that surface, so the side of the head looked bald.
     """
-    rows, cols = 16, 20
+    rows, cols = 22, 26
+    # Root just inside the tragion; the helix is built outward from here.
+    ox, oy, oz = 7.5 * side, 0.45, -3.25
     grid = np.zeros((rows, cols, 3))
-    cx, cy, cz = 7.05 * side, -0.35, -3.3
-    rx, ry, rz = 1.05, 3.05, 1.70
     for r in range(rows):
         phi = math.pi * (r / (rows - 1))
+        y = math.cos(phi)
+        ring = math.sin(phi)
         for c in range(cols):
             theta = 2 * math.pi * (c / cols)
-            y = math.cos(phi)
-            radial = math.sin(phi)
-            z = radial * math.cos(theta)
-            x = radial * math.sin(theta)
-            # Taper the lobe, lean the top back, keep the front edge tight.
-            taper = 1.0 - 0.32 * max(0.0, -y)
+            # +1 is lateral (out of the head), the sign of sin is front/back.
+            outward = math.cos(theta)
+            forward = math.sin(theta)
+            # Helix: a rim around the upper and back edge, not a smooth egg.
+            rim = math.exp(-((outward - 0.05) ** 2) / 0.22) * max(0.0, 0.25 + y)
+            # Concha: the bowl you see on the outside of a real ear.
+            bowl = math.exp(-((outward - 0.72) ** 2) / 0.08 - ((y + 0.05) ** 2) / 0.18)
+            protrude = 0.15 + 1.25 * max(0.0, outward) + 0.7 * rim
+            protrude -= 0.85 * bowl * max(0.0, outward)
+            # The lobe hangs, rounds off and sits closer to the head.
+            lobe = max(0.0, -y)
+            protrude *= 1.0 - 0.4 * lobe
+            # Tragus: a small bump at the front, where the ear meets the cheek.
+            tragus = math.exp(-((forward - 0.85) ** 2) / 0.05 - ((y + 0.15) ** 2) / 0.08)
+            protrude += 0.35 * tragus
+            height = 3.35 * (1.0 - 0.08 * lobe)
+            depth = 1.55 * (1.0 - 0.22 * lobe)
             point = np.array(
-                [cx + x * rx * side, cy + y * ry, cz + z * rz * taper - 0.55 * y]
+                [
+                    ox + side * (0.45 + protrude * 1.35) * (0.5 + 0.5 * ring),
+                    oy + y * height - 0.15 * lobe,
+                    oz + forward * ring * depth - 0.55 * y,
+                ]
             )
+            # The medial half sinks into the skull so the ear is attached, not floating.
+            if outward < 0.05:
+                tuck = min(1.0, (0.05 - outward) / 1.05)
+                tuck = tuck * tuck
+                point[0] = point[0] * (1.0 - 0.72 * tuck) + (6.7 * side) * (0.72 * tuck)
+                point[2] = point[2] * (1.0 - 0.25 * tuck) + (oz + 0.4) * (0.25 * tuck)
             grid[r, c] = point
     return grid
 
@@ -615,20 +641,20 @@ def main():
             for c in range(ecols + 1):
                 point = grid[r, c % ecols]
                 positions.append(list(map(float, point)))
-                # Project sideways: the atlas holds a photo crop of that ear.
-                u = 0.5 + (point[2] - (-3.3)) / 5.2 * (-side)
-                v = 0.5 + (point[1] - (-0.35)) / 7.4
+                z0, z1 = float(grid[:, :, 2].min()), float(grid[:, :, 2].max())
+                y0, y1 = float(grid[:, :, 1].min()), float(grid[:, :, 1].max())
+                u = (point[2] - z0) / max(z1 - z0, 1e-4)
+                if side > 0:
+                    u = 1.0 - u
+                v = (point[1] - y0) / max(y1 - y0, 1e-4)
                 uvs.append(rect_uv(rect, min(1, max(0, u)), min(1, max(0, v))))
         indices += grid_indices(start, erows, ecols + 1, flip=side < 0, wrap=False)
         ear_ranges.append({"side": name, "start": start, "rows": erows, "cols": ecols + 1})
-        anchor = np.array([verts[234] if side < 0 else verts[454]])
-        wrapped_ear = np.concatenate([grid, grid[:, :1]], axis=1).reshape(-1, 3)
-        weights = seam_weights(
-            wrapped_ear, anchor, [234 if side < 0 else 454], falloff=9.0
-        )
-        for offset, w in enumerate(weights):
-            if w:
-                seam_targets.append([int(start + offset), w])
+        # The whole pinna follows the tragion, so a wider or narrower face
+        # carries the ear with it instead of leaving it inside the skull.
+        tragion = 234 if side < 0 else 454
+        for offset in range(erows * (ecols + 1)):
+            seam_targets.append([int(start + offset), [[tragion, 1.0]]])
 
     head = {
         "positions": positions,

@@ -35,8 +35,9 @@ function style(id, name, detail, overrides) {
 
 export const STYLES = [
   style("actual", "Tu corte", "Rizado corto, degradado medio", {
-    lengthCm: 4.2, curl: 0.55, curlFreq: 2.0, volume: 0.34, fadeLine: -0.02,
-    styling: 0.28, lift: 0.22, cling: 0.45, widthCm: 2.5, perRing: 40, sheen: 0.48, seed: 3,
+    lengthCm: 3.4, curl: 0.42, curlFreq: 1.8, volume: 0.2, fadeLine: 0.06,
+    fadeSoft: 0.2, styling: 0.22, lift: 0.08, cling: 0.72, gravity: 0.62,
+    widthCm: 1.7, perRing: 32, rings: 24, sheen: 0.42, seed: 3,
   }),
   style("fade-alto", "Degradado alto", "Arriba texturizado, lados a piel", {
     lengthCm: 4.4, curl: 0.5, curlFreq: 2.0, volume: 0.46, fadeLine: 0.3,

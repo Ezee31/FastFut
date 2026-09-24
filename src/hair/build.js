@@ -16,7 +16,9 @@ function hairAmount(point, skull, style) {
   const relY = (point.y - skull.center[1]) / skull.radii[1];
   const relZ = (point.z - skull.center[2]) / skull.radii[2];
   const lateral = Math.abs(point.x) / skull.radii[0];
-  const line = style.fadeLine - lateral * style.fadeSlope;
+  // Sides lose length first. Subtracting the lateral term used to grow
+  // more hair toward the ears, which is the opposite of a fade.
+  const line = style.fadeLine + lateral * (style.fadeSlope ?? 0);
   let amount = Math.max(0, Math.min(1, (relY - line) / Math.max(style.fadeSoft, 1e-3)));
   if (style.mohawk > 0) {
     const crest = Math.max(0, Math.min(1, (style.mohawkWidth + 0.06 - lateral) / 0.08));
@@ -105,33 +107,43 @@ function capLift(style) {
  * The cap: an opaque layer just above the scalp so the hair reads as a mass
  * instead of separate ribbons. Game hair is built the same way.
  */
-function buildCap(head, sampler, style, mesh, capU, field) {
-  const rows = 22;
-  const cols = 72;
+function buildCap(head, sampler, style, mesh, capU, field, mask) {
+  const rows = 36;
+  const cols = 96;
   const upper = head.shell.upperSpan;
   const skull = head.skull;
-  const lift = capLift(style);
   const normal = new THREE.Vector3();
   const tangent = new THREE.Vector3();
   const grid = [];
+  // Start above the face oval. Row 0 of the shell is the forehead, and a
+  // hair shell that begins there cuts the brow with a black polygon.
+  const v0 = style.flow > 0.55 ? 0.012 : 0.05;
+  const hover = 0.06 + style.volume * 0.16;
   for (let r = 0; r < rows; r += 1) {
-    const v = (r / (rows - 1)) * style.napeV;
+    const v = v0 + (r / (rows - 1)) * Math.max(0.05, style.napeV - v0);
     const line = [];
     for (let c = 0; c < cols; c += 1) {
       const u = (c / (cols - 1)) * upper;
       const hit = sampler.sample(u, v);
       const amount = hairAmount(hit.position, skull, style);
       field.normalAt(hit.position, normal);
-      const point = hit.position.clone().addScaledVector(normal, lift * (0.35 + 0.65 * amount));
+      const point = hit.position.clone().addScaledVector(
+        normal,
+        hover + amount * (0.1 + style.volume * 0.28)
+      );
       flowAt(point, normal, skull, style, tangent);
-      // Fade the cap at the hairline so the cards carry the edge.
-      const relZ = (hit.position.z - skull.center[2]) / skull.radii[2];
-      const front = Math.max(0, Math.min(1, (relZ - 0.1) / 0.4));
-      // Wobble the edge per column so the hairline is not a drawn line.
-      const wobble = 0.035 + 0.05 * (0.5 + 0.5 * Math.sin(c * 2.7) * Math.cos(c * 0.9));
-      const hairline = Math.min(1, v / wobble);
-      const alpha = amount > 0.04 ? Math.min(1, amount * 1.6) * (1 - front * (1 - hairline)) : 0;
-      const id = mesh.push(point, capU, 0.4, tangent, 0.78, 1, alpha);
+      const wave = 0.01 * Math.sin(c * 0.37);
+      const grow = Math.max(0, Math.min(1, (v - v0 - wave) / 0.16));
+      const soft = grow * grow * (3 - 2 * grow);
+      const alpha = amount <= 0.03 ? 0 : Math.min(0.96, amount * 1.5) * soft;
+      if (mask && c % 4 === 0 && amount > 0.08) mask.push([u, v, amount]);
+      // Repeat the cap grain around the head so the shell reads as hair, not a flat lid.
+      // Stay in the opaque middle of the cap strip. The soft sides are for
+      // ribbons; sampling them around the head cuts the shell into chunks.
+      const grain = ((c * 5) % cols) / cols;
+      const half = (1 - capU) * 0.28;
+      const capTexU = capU + (grain - 0.5) * 2 * half;
+      const id = mesh.push(point, capTexU, r / (rows - 1), tangent, 0.9, 1, alpha);
       line.push(id);
     }
     grid.push(line);
@@ -147,6 +159,7 @@ function rootCandidates(head, style, random) {
   const upper = head.shell.upperSpan;
   const list = [];
   const rings = style.rings ?? 26;
+  const minV = (style.flow ?? 0) > 0.5 ? 0.012 : 0.055;
   for (let ring = 0; ring < rings; ring += 1) {
     const v = (ring / (rings - 1)) * style.napeV;
     const around = Math.round(
@@ -155,7 +168,10 @@ function rootCandidates(head, style, random) {
     for (let i = 0; i < around; i += 1) {
       const u = ((i + 0.5) / around + (random() - 0.5) / around) * upper;
       const jitter = (random() - 0.5) * (style.napeV / rings) * 0.9;
-      list.push([Math.max(0.001, Math.min(upper - 0.001, u)), Math.max(0.004, v + jitter)]);
+      list.push([
+        Math.max(0.001, Math.min(upper - 0.001, u)),
+        Math.max(minV, Math.min(style.napeV - 0.01, v + jitter)),
+      ]);
     }
   }
   return list;
@@ -176,7 +192,7 @@ function walkStrand(root, style, field, skull, params, field_tmp) {
   const dir = direction.clone();
   const side = new THREE.Vector3().crossVectors(dir, normal).normalize();
   const localNormal = normal.clone();
-  const point = root.clone().addScaledVector(normal, lift * (0.3 + 0.7 * amount) + 0.06);
+  const point = root.clone().addScaledVector(normal, 0.08 + 0.16 * amount + style.volume * 0.1);
   const segLength = lengthCm / SEGMENTS;
   const rootY = root.y;
   const path = [];
@@ -191,7 +207,7 @@ function walkStrand(root, style, field, skull, params, field_tmp) {
     dir.addScaledVector(DOWN, style.gravity * 0.55 * (0.25 + t));
     dir.addScaledVector(localNormal, -style.cling * 0.32);
     dir.normalize();
-    field.push(point, 0.3 + style.volume * 0.9);
+    field.push(point, 0.06 + style.volume * 0.12);
     if (point.z > skull.center[2] + skull.radii[2] * 0.25) {
       point.y = Math.max(point.y, rootY - fringeDrop);
     }
@@ -235,7 +251,7 @@ export function buildHair(head, positions, sampler, style, options = {}) {
   const tmp = new THREE.Vector3();
   const mask = [];
 
-  buildCap(head, sampler, style, mesh, capU, field);
+  buildCap(head, sampler, style, mesh, capU, field, mask);
 
   // Clumps: real hair falls in locks, so every card is pulled toward the path of
   // its nearest clump. Without this the cards read as separate ribbons.
@@ -258,14 +274,17 @@ export function buildHair(head, positions, sampler, style, options = {}) {
     const hit = sampler.sample(u, v);
     const root = hit.position;
     const amount = hairAmount(root, skull, style);
-    if (amount <= 0.05) continue;
+    // The fade is skin and stubble. Cards only grow where there is real length,
+    // otherwise they read as black plates on the temple and the forehead.
+    if (amount < 0.4) continue;
+    // A short cut is the shell. Cards on top of it are the black spikes.
+    const shortCut = style.lengthCm < 5.5;
+    if (shortCut) continue;
     const relZ = (root.z - skull.center[2]) / skull.radii[2];
     const front = Math.max(0, Math.min(1, (relZ - 0.25) / 0.4));
-    // Break the hairline: a few short strands start below it, on the forehead.
-    const short = front > 0 && v < 0.05 && random() < 0.45;
-    if (short) root.addScaledVector(hit.alongV, -(0.25 + random() * 0.55));
-    const wisp = random() < 0.24;
-    const params = strandParams(style, random, amount, front, { wisp, short });
+    const wisp = random() < 0.1;
+    const params = strandParams(style, random, amount, front, { wisp });
+    if (shortCut) params.lengthCm *= 0.45;
     if (params.lengthCm < 0.15) continue;
     mask.push([u, v, amount]);
 
@@ -282,7 +301,7 @@ export function buildHair(head, positions, sampler, style, options = {}) {
         clump = candidate;
       }
     }
-    const converge = clump && !wisp ? Math.max(0, 0.42 - best * 1.6) : 0;
+    const converge = clump && !wisp && style.lengthCm > 7 ? Math.max(0, 0.28 - best * 1.4) : 0;
 
     const widthCm =
       style.widthCm *
@@ -290,7 +309,9 @@ export function buildHair(head, positions, sampler, style, options = {}) {
       (wisp ? 0.55 + 0.25 * random() : 0.85 + 0.4 * random());
     // Roll the card around the growth direction. Flat cards disappear when the
     // camera looks at their edge, which is what made the hair read as spikes.
-    const roll = (random() - 0.5) * (wisp ? 0.9 : 0.55);
+    // Almost flat on the scalp. A big roll turns each card into a fin, which
+    // is the black shard you see from the side.
+    const roll = (random() - 0.5) * (wisp ? 0.35 : 0.16);
     const strip = wisp
       ? hairStrips - 2 + Math.floor(random() * 2)
       : Math.min(hairStrips - 3, Math.floor(random() * (hairStrips - 2)));

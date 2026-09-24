@@ -84,7 +84,7 @@ void main() {
   albedo *= 0.80 + 0.40 * strand;
   albedo *= vTint;
   // Roots sit in shadow, tips catch light.
-  float occlusion = mix(0.42, 1.0, clamp(vAlong * 1.3 + 0.08, 0.0, 1.0)) * vShade;
+  float occlusion = mix(0.72, 1.0, clamp(vAlong * 1.1 + 0.15, 0.0, 1.0)) * vShade;
 
   vec3 lighting = uAmbient * 0.9;
   lighting += uKeyColor * strandDiffuse(t, uKeyDir) * 1.15;

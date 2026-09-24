@@ -260,9 +260,55 @@ input[type="range"] { width: 100%; accent-color: var(--brass); }
   color: var(--brass-2);
 }
 
+.short { display: none; }
+
 @media (max-width: 900px) {
-  header { left: 10px; right: 10px; top: 10px; }
-  #panel { top: auto; left: 10px; right: 10px; bottom: 10px; width: auto; max-height: 34vh; }
-  #stage-ui { left: 10px; right: 10px; bottom: auto; top: 78px; }
-  #cut-name strong { font-size: 22px; }
+  header {
+    left: 8px;
+    right: 8px;
+    top: max(8px, env(safe-area-inset-top));
+    align-items: center;
+    gap: 8px;
+  }
+  .brand { padding: 6px 10px; gap: 8px; border-radius: 12px; }
+  .brand em, .full { display: none; }
+  .short { display: inline; }
+  .brand strong { font-size: 15px; }
+  .mark { width: 26px; height: 26px; }
+  .header-actions { gap: 6px; }
+  .header-actions button { padding: 8px 12px; font-size: 13px; }
+
+  #panel {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: 30vh;
+    padding: 12px;
+    border-radius: 18px;
+  }
+  #panel section + section { margin-top: 12px; padding-top: 10px; }
+  .style-grid { gap: 6px; }
+  .style-grid button { padding: 8px; }
+  .style-grid span { font-size: 10px; }
+
+  /* Name and view buttons sit on the sheet, not on the face. */
+  #stage-ui {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: calc(30vh + 14px + env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+  #cut-name strong { font-size: 18px; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85); }
+  #cut-name span { font-size: 12px; }
+  #hint { display: none; }
+  .views {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .views button { padding: 7px 11px; font-size: 12px; flex: none; }
 }
