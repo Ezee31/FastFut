@@ -8,17 +8,20 @@
   </head>
   <body>
     <canvas id="view"></canvas>
+    <video id="live-video" playsinline muted hidden></video>
+
     <div id="app">
       <header>
         <div class="brand">
           <span class="mark" aria-hidden="true"></span>
           <div>
             <strong>Estudio de corte</strong>
-            <em>Prueba cortes sobre tu foto</em>
+            <em>Tu cara escaneada, en 3D</em>
           </div>
         </div>
         <div class="header-actions">
-          <button type="button" id="btn-random">Al azar</button>
+          <span id="live-badge" class="badge hidden">Cámara en vivo</span>
+          <button type="button" id="btn-rescan">Escanear</button>
           <button type="button" id="btn-shot">Guardar foto</button>
         </div>
       </header>
@@ -26,52 +29,27 @@
       <aside id="panel">
         <section>
           <h2>Cortes</h2>
-          <div id="presets" class="preset-grid"></div>
+          <div id="styles" class="style-grid"></div>
         </section>
         <section>
           <h2>Ajuste</h2>
           <label class="slider">
-            <span>Largo arriba <b id="length-read">6 cm</b></span>
-            <input id="length" type="range" min="0.1" max="18" step="0.1" />
+            <span>Largo <b id="length-read"></b></span>
+            <input id="length" type="range" min="0.2" max="18" step="0.1" />
           </label>
           <label class="slider">
-            <span>Degradado <b id="fade-read">Medio</b></span>
-            <input id="fade" type="range" min="0" max="1" step="0.01" />
+            <span>Degradado <b id="fade-read"></b></span>
+            <input id="fade" type="range" min="-0.4" max="0.45" step="0.01" />
           </label>
           <label class="slider">
-            <span>Rizos <b id="curl-read"></b></span>
+            <span>Rizo <b id="curl-read"></b></span>
             <input id="curl" type="range" min="0" max="1" step="0.01" />
           </label>
           <label class="slider">
             <span>Volumen</span>
             <input id="volume" type="range" min="0" max="1" step="0.01" />
           </label>
-          <label class="slider">
-            <span>Caída <b id="flow-read">Natural</b></span>
-            <input id="flow" type="range" min="-1" max="1" step="0.01" />
-            <small>Adelante · Atrás</small>
-          </label>
-          <label class="slider">
-            <span>Raya</span>
-            <input id="part" type="range" min="-1" max="1" step="0.01" />
-            <small>Izquierda · Derecha</small>
-          </label>
-          <label class="slider">
-            <span>Desorden</span>
-            <input id="mess" type="range" min="0" max="1" step="0.01" />
-          </label>
-          <label class="slider">
-            <span>Barba <b id="beard-read"></b></span>
-            <small>Rasurada · La de la foto</small>
-            <input id="beard" type="range" min="0" max="1" step="0.01" />
-          </label>
-          <div class="segmented" id="beard-styles"></div>
-          <div class="colors" id="colors"></div>
-          <button type="button" id="btn-reset" class="ghost">Restablecer este corte</button>
-        </section>
-        <section>
-          <h2>Tus fotos</h2>
-          <div id="refs" class="refs"></div>
+          <div id="colors" class="colors"></div>
         </section>
       </aside>
 
@@ -80,10 +58,42 @@
           <strong></strong>
           <span></span>
         </div>
-        <p id="hint">Tu cara es la foto. El corte solo cambia el pelo.</p>
+        <div id="views" class="views"></div>
+        <p id="hint">Arrastrá para girar · rueda para acercar · <b id="card-count"></b></p>
       </div>
     </div>
-    <div id="loader">Abriendo tu foto…</div>
-    <script type="module" src="/src/main.js"></script>
+
+    <div id="onboard" class="overlay">
+      <div class="sheet">
+        <button type="button" id="btn-close-onboard" class="close" aria-label="Cerrar">×</button>
+        <h1>Escaneá tu cara</h1>
+        <p>
+          Con la cámara tomo cinco ángulos y armo tu cabeza en 3D, con tu piel y tu
+          barba reales. También podés subir fotos: de frente, tres cuartos y perfil.
+        </p>
+        <div class="choices">
+          <button type="button" id="btn-scan" class="primary">Escanear con la cámara</button>
+          <label class="upload">
+            Subir fotos
+            <input id="file" type="file" accept="image/*" multiple hidden />
+          </label>
+        </div>
+        <label class="check"><input id="scan-live" type="checkbox" checked /> Al terminar, que el modelo copie mi cara en vivo</label>
+      </div>
+    </div>
+
+    <div id="scan" class="overlay hidden">
+      <div class="sheet scan">
+        <div class="scan-frame">
+          <video id="scan-video" playsinline muted></video>
+        </div>
+        <p id="scan-hint">Mirá al frente</p>
+        <div id="scan-dots" class="dots"></div>
+        <button type="button" id="scan-cancel" class="ghost">Cancelar</button>
+      </div>
+    </div>
+
+    <div id="loader"><span>Cargando…</span></div>
+    <script type="module" src="/src/app.js"></script>
   </body>
 </html>
