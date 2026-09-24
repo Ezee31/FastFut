@@ -54,12 +54,10 @@ void main() {
   float band = pow(clamp(1.0 - abs(dot(T, H)), 0.0, 1.0), 18.0);
   float diff = 0.42 + 0.7 * sqrt(max(1.0 - tl * tl, 0.0));
   float fill = 0.22 * sqrt(max(1.0 - dot(T, normalize(uFill)) * dot(T, normalize(uFill)), 0.0));
-  vec3 albedo = max(vCol, vec3(0.018));
-  vec3 col = albedo * (diff + fill);
-  col += vec3(1.0, 0.96, 0.9) * band * 0.42;
-  col += vCol * spec * 0.22;
-  float rim = pow(clamp(1.0 - abs(dot(T, V)), 0.0, 1.0), 1.8);
-  col += vec3(1.0, 0.92, 0.8) * rim * 0.55;
+  vec3 albedo = max(vCol, vec3(0.02, 0.014, 0.011));
+  vec3 col = albedo * (0.55 + 0.9 * diff + fill);
+  col += albedo * band * 1.4;
+  col += vec3(0.85, 0.78, 0.7) * spec * 0.035;
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -132,6 +130,8 @@ void main() {
   float reveal = max(uBald, side * below * smoothstep(0.15, 0.55, uFade));
   vec3 albedo = mix(skin, uHair, hairRegion * (1.0 - uBald));
   albedo = mix(albedo, skin, reveal);
+  float neckShade = 1.0 - smoothstep(0.12, 0.5, vHeight);
+  albedo *= mix(1.0, 0.55, neckShade);
 
   vec3 N = normalize(vNormalW);
   vec3 L = normalize(uKey);
@@ -165,7 +165,8 @@ function strandLength(zone, lateral, height, rx, phase, params, kind) {
     if (params.beard <= 0.04) return 0;
     if (params.beardStyle === "mustache" && zone !== 8) return 0;
     if (params.beardStyle === "goatee" && zone === 7 && lateral > 0.38) return 0;
-    const cm = params.beard * (zone === 8 ? 1.5 : 3.4);
+    if (zone === 8 && params.beardStyle !== "mustache") return 0;
+    const cm = params.beard * (zone === 8 ? 0.6 : 1.3);
     return cm * upc * (0.65 + 0.55 * hash(phase * 90 + zone));
   }
 
@@ -187,70 +188,62 @@ function strandLength(zone, lateral, height, rx, phase, params, kind) {
   if (zone === 4) cm *= params.backMul;
   if (zone === 1) cm *= params.fringe;
   if (zone === 5) cm *= 0.9 + params.volume * 0.2;
-  cm *= 0.5 + 0.85 * hash(phase * 40 + zone * 3);
+  cm *= 0.82 + 0.28 * hash(phase * 40 + zone * 3);
   if (hash(phase * 17) > params.density) return 0;
   return Math.max(0, cm) * upc;
 }
 
 function pushStrand(buffers, root, normal, lateral, height, zone, phase, len, params, color, seed) {
-  const segs = len > params._upc * 2.4 ? 8 : 4;
+  const segs = len > params._upc * 3 ? 7 : 5;
   const pts = new Float32Array((segs + 1) * 3);
-  const lift = params._upc * 0.12;
-  root[0] += normal[0] * lift;
-  root[1] += normal[1] * lift;
-  root[2] += normal[2] * lift;
-  const clump = Math.round(root[0] / (params._upc * 1.5)) * 19
-    + Math.round(root[1] / (params._upc * 1.5)) * 7
-    + Math.round(root[2] / (params._upc * 1.5)) * 3;
+  const upc = params._upc;
+  const clump = Math.round(root[0] / (upc * 1.4)) * 19
+    + Math.round(root[1] / (upc * 1.4)) * 7
+    + Math.round(root[2] / (upc * 1.4));
   const clumpPhase = hash(clump);
-  phase = phase * 0.25 + clumpPhase * 0.75;
+  phase = phase * 0.35 + clumpPhase * 0.65;
   const partX = params.part * params._half * 0.5;
   const fall = Math.sign(root[0] - partX) || (clumpPhase > 0.5 ? 1 : -1);
-  let dx = normal[0] * params.volume * 0.95 + fall * params.spread * 0.42;
-  let dy = (1 - params.gravity) * 0.9 + normal[1] * params.volume * 0.35;
-  let dz = -params.flow * 0.8 + normal[2] * 0.15;
+  // Stay on the scalp. Volume lifts a little; gravity bends the strand down.
+  let dx = normal[0] * (0.22 + params.volume * 0.35) + fall * params.spread * 0.28;
+  let dy = 0.15 + (1 - params.gravity) * 0.7;
+  let dz = normal[2] * 0.12 - params.flow * 0.55;
   if (zone === 1) {
-    dy -= 0.55;
-    dz += 0.7 * params.fringe;
+    dy -= 0.45;
+    dz += 0.55 * Math.min(params.fringe, 1.4);
   }
-  if (zone === 4) {
-    dx += normal[0] * 0.45;
-    dy += 0.15;
-    dz -= 0.35 * params.backMul;
-  }
+  if (zone === 4) dz -= 0.28 * Math.min(params.backMul, 1.6);
   let mag = Math.hypot(dx, dy, dz) || 1;
   dx /= mag;
   dy /= mag;
   dz /= mag;
 
-  let px = root[0];
-  let py = root[1];
-  let pz = root[2];
+  let px = root[0] + normal[0] * upc * 0.06;
+  let py = root[1] + normal[1] * upc * 0.06;
+  let pz = root[2] + normal[2] * upc * 0.06;
   pts[0] = px;
   pts[1] = py;
   pts[2] = pz;
   const step = len / segs;
+  const amp = params.curl * Math.min(len * 0.18, upc * 0.85);
   for (let s = 1; s <= segs; s++) {
     const t = s / segs;
-    dy -= params.gravity * 0.2;
+    dy -= params.gravity * 0.28;
     mag = Math.hypot(dx, dy, dz) || 1;
     dx /= mag;
     dy /= mag;
     dz /= mag;
-    px += dx * step;
-    py += dy * step;
-    pz += dz * step;
-    const amp = params.curl * Math.min(len, params._upc * 4.5) * 0.2;
+    const bx = px + dx * step;
+    const by = py + dy * step;
+    const bz = pz + dz * step;
     const ang = t * params.curlFreq * Math.PI * 2 + phase * Math.PI * 2;
-    px += Math.sin(ang) * amp * (0.4 + lateral);
-    pz += Math.cos(ang) * amp * 0.72;
-    py += Math.sin(ang * 2.0) * amp * 0.22 * params.curl;
-    const mess = (hash(phase * 50 + s) - 0.5) * params.mess * step * 0.8;
-    px += mess;
-    pz += mess * 0.6;
-    pts[s * 3] = px;
-    pts[s * 3 + 1] = py;
-    pts[s * 3 + 2] = pz;
+    const mess = (hash(phase * 50 + s) - 0.5) * params.mess * upc * 0.12;
+    pts[s * 3] = bx + Math.sin(ang) * amp + mess;
+    pts[s * 3 + 1] = by + Math.sin(ang * 2) * amp * 0.25 * params.curl;
+    pts[s * 3 + 2] = bz + Math.cos(ang) * amp * 0.65;
+    px = bx;
+    py = by;
+    pz = bz;
   }
 
   const baseW = params._upc * (zone === 8 || zone === 7 ? 0.08 : 0.11) * (0.7 + hash(seed) * 0.55);

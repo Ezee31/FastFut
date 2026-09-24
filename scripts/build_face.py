@@ -231,62 +231,56 @@ def resample_polyline(points, count: int) -> list[np.ndarray]:
     return out
 
 
-def blend_keys(frame, start: np.ndarray, lateral: float, sign: float) -> list[np.ndarray]:
-    """Round skull path. lateral 0 is the crown midline, 1 is the ear."""
-    lat = float(np.clip(lateral, 0.0, 1.0))
-    center = [
-        cm_to(frame, 0.0, 11.4, 6.5),
-        cm_to(frame, 0.0, 14.4, 4.4),
-        cm_to(frame, 0.0, 13.6, 1.0),
-        cm_to(frame, 0.0, 10.6, -4.4),
-        cm_to(frame, 0.0, 6.8, -9.4),
-        cm_to(frame, 0.0, 3.2, -9.6),
-        cm_to(frame, 0.0, 0.2, -8.2),
-    ]
-    side = [
-        cm_to(frame, 6.7, 1.3, 0.2),
-        cm_to(frame, 6.6, 2.3, -2.2),
-        cm_to(frame, 6.3, 2.5, -4.4),
-        cm_to(frame, 5.5, 2.0, -7.4),
-        cm_to(frame, 4.3, 1.2, -8.8),
-        cm_to(frame, 3.2, 0.2, -8.4),
-        cm_to(frame, 2.5, -0.6, -7.6),
-    ]
-    keys = [start]
-    for c, s in zip(center, side):
-        point = c * (1 - lat) + s * lat
-        point[0] = abs(point[0]) * sign
-        keys.append(point)
-    return keys
-
-
-def sample_keys(keys: list[np.ndarray], steps: int) -> list[np.ndarray]:
+def _profile(keys, t: float) -> tuple[float, float]:
     segs = len(keys) - 1
-    out = []
-    for i in range(steps):
-        f = (i / (steps - 1)) * segs
-        seg = min(int(math.floor(f)), segs - 1)
-        t = f - seg
-        t = t * t * (3 - 2 * t)
-        out.append(keys[seg] * (1 - t) + keys[seg + 1] * t)
-    out[0] = keys[0]
-    out[-1] = keys[-1]
-    return out
+    f = max(0.0, min(0.9999, t)) * segs
+    seg = min(int(math.floor(f)), segs - 1)
+    local = f - seg
+    local = local * local * (3 - 2 * local)
+    a = keys[seg]
+    b = keys[seg + 1]
+    return a[0] * (1 - local) + b[0] * local, a[1] * (1 - local) + b[1] * local
 
 
 def build_cranium(pts: np.ndarray, frame: dict):
-    """Rounded cranium welded to the forehead arc. Row 0 is the face border."""
-    arc = resample_polyline([pts[i] for i in UPPER], 25)
+    """Rounded cranium welded to the forehead arc. Row 0 is the face border.
+
+    The crown has to stay wide. A midline-only lift turns the top into the
+    black cone visible from the front.
+    """
+    arc = resample_polyline([pts[i] for i in UPPER], 29)
     n = len(arc)
-    steps = 28
+    steps = 26
     grid = np.zeros((steps, n, 3), dtype=np.float64)
-    half = max(frame["halfWidth"], 1.0)
-    for i, p in enumerate(arc):
-        lateral = abs(float(p[0])) / half
-        sign = 1.0 if p[0] >= 0 else -1.0
-        column = sample_keys(blend_keys(frame, p, lateral, sign), steps)
-        for s, point in enumerate(column):
-            grid[s, i] = point
+    upc = frame["unitsPerCm"]
+    for i, start in enumerate(arc):
+        u = i / (n - 1)
+        across = abs(u - 0.5) * 2.0
+        sign = -1.0 if u < 0.5 else 1.0
+        start_w = abs(float(start[0])) / upc
+        sy, sz = float(start[1]) / upc, float(start[2]) / upc
+        center_keys = [(sy, sz), (11.0, 6.0), (14.0, 3.2), (11.8, -1.2), (7.2, -6.8), (2.8, -8.6), (-0.2, -7.4)]
+        side_keys = [(sy, sz), (0.8, -0.6), (2.0, -3.2), (1.4, -6.2), (0.2, -8.2), (-0.8, -7.6), (-1.6, -6.4)]
+        crown_w = 5.7 + 1.15 * across
+        nape_w = 2.0 + 1.6 * across
+        for s in range(steps):
+            t = s / (steps - 1)
+            if s == 0:
+                grid[s, i] = start
+                continue
+            cy, cz = _profile(center_keys, t)
+            ey, ez = _profile(side_keys, t)
+            y = cy * (1 - across) + ey * across
+            z = cz * (1 - across) + ez * across
+            if t < 0.32:
+                k = t / 0.32
+                k = k * k * (3 - 2 * k)
+                w = start_w * (1 - k) + crown_w * k
+            else:
+                k = (t - 0.32) / 0.68
+                k = k * k * (3 - 2 * k)
+                w = crown_w * (1 - k) + nape_w * k
+            grid[s, i] = cm_to(frame, sign * w, y, z)
 
     verts = []
     colors = []
@@ -699,8 +693,7 @@ def main() -> None:
     cran, hair_roots, cran_grid = build_cranium(pts, frame)
     neck, cape, neck_grid = build_neck(pts, frame, skin)
     sides = build_side_fills(cran_grid, neck_grid, skin)
-    ears = build_ears(pts, frame, skin)
-    skin_mesh = merge_meshes([cran, neck, sides, ears])
+    skin_mesh = merge_meshes([cran, neck, sides])
 
     # Extra hairline roots just above the forehead arc so fringes can fall forward.
     rng = np.random.default_rng(11)
