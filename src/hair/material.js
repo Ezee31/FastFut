@@ -4,6 +4,7 @@ const VERT = /* glsl */ `
 attribute vec3 cardTangent;
 attribute float cardShade;
 attribute float cardTint;
+attribute float cardAlpha;
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vTangent;
@@ -11,9 +12,11 @@ varying vec3 vView;
 varying float vShade;
 varying float vTint;
 varying float vAlong;
+varying float vAlpha;
 
 void main() {
   vUv = uv;
+  vAlpha = cardAlpha;
   vNormal = normalize(normalMatrix * normal);
   vTangent = normalize(normalMatrix * cardTangent);
   vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
@@ -49,6 +52,7 @@ varying vec3 vView;
 varying float vShade;
 varying float vTint;
 varying float vAlong;
+varying float vAlpha;
 
 float strandSpec(vec3 t, vec3 n, vec3 l, vec3 v, float shift, float power) {
   vec3 tt = normalize(t + n * shift);
@@ -66,7 +70,7 @@ float strandDiffuse(vec3 t, vec3 l) {
 
 void main() {
   vec4 strip = texture2D(uStrips, vUv);
-  float alpha = strip.a * uOpacity;
+  float alpha = strip.a * vAlpha * uOpacity;
   if (alpha < uAlphaTest || alpha >= uAlphaMax) discard;
 
   vec3 n = normalize(vNormal);
@@ -82,19 +86,19 @@ void main() {
   // Roots sit in shadow, tips catch light.
   float occlusion = mix(0.42, 1.0, clamp(vAlong * 1.3 + 0.08, 0.0, 1.0)) * vShade;
 
-  vec3 lighting = uAmbient * 0.55;
-  lighting += uKeyColor * strandDiffuse(t, uKeyDir) * 0.62;
-  lighting += uFillColor * strandDiffuse(t, uFillDir) * 0.26;
-  lighting += uRimColor * max(0.0, dot(n, uRimDir)) * 0.22;
+  vec3 lighting = uAmbient * 0.9;
+  lighting += uKeyColor * strandDiffuse(t, uKeyDir) * 1.15;
+  lighting += uFillColor * strandDiffuse(t, uFillDir) * 0.42;
+  lighting += uRimColor * max(0.0, dot(n, uRimDir)) * 0.38;
   vec3 color = albedo * lighting * occlusion;
 
   // Two shifted lobes: a tight white one and a broad one tinted by the hair.
-  float primary = strandSpec(t, n, uKeyDir, v, 0.10, mix(80.0, 220.0, uGloss));
-  float secondary = strandSpec(t, n, uKeyDir, v, -0.06, mix(14.0, 40.0, uGloss));
-  color += uKeyColor * primary * uSheen * 0.55 * occlusion;
-  color += albedo * uKeyColor * secondary * uSheen * 1.45 * occlusion;
-  float rimSpec = strandSpec(t, n, uRimDir, v, 0.08, 90.0);
-  color += uRimColor * rimSpec * uSheen * 0.35;
+  float primary = strandSpec(t, n, uKeyDir, v, 0.10, mix(60.0, 180.0, uGloss));
+  float secondary = strandSpec(t, n, uKeyDir, v, -0.06, mix(10.0, 30.0, uGloss));
+  color += uKeyColor * primary * uSheen * 0.42 * occlusion * strand;
+  color += (albedo + uKeyColor * 0.06) * secondary * uSheen * 3.2 * occlusion;
+  float rimSpec = strandSpec(t, n, uRimDir, v, 0.08, 70.0);
+  color += uRimColor * rimSpec * uSheen * 0.55 * occlusion;
 
   gl_FragColor = vec4(color, alpha);
 }

@@ -39,7 +39,8 @@ ATLAS = {
     "face": [0.005, 0.505, 0.49, 0.49],
     "shell": [0.505, 0.505, 0.49, 0.49],
     "bust": [0.005, 0.145, 0.49, 0.35],
-    "ear": [0.505, 0.255, 0.24, 0.24],
+    "earLeft": [0.505, 0.255, 0.24, 0.24],
+    "earRight": [0.755, 0.255, 0.24, 0.24],
 }
 
 
@@ -165,12 +166,11 @@ def project_bust(points):
 
 def build_shell(verts):
     """One closed surface from the face oval over the skull and down to the neck."""
-    cols = 96
     rows = 34
     loop = oval_loop()
-    loop_pos = np.array([verts[i] for i in loop])
-    loop_pos = np.vstack([loop_pos, loop_pos[:1]])
-    ring_idx = resample_indices(loop, cols + 1)[:cols]
+    # One column per oval vertex: no repeats, and the seam matches exactly.
+    ring_idx = [int(i) for i in loop]
+    cols = len(ring_idx)
     ring_pos = np.array([verts[i] for i in ring_idx])
 
     # Angle around the neck: left ear -> back -> right ear -> throat -> left ear.
@@ -182,8 +182,7 @@ def build_shell(verts):
             alpha[i] = math.pi + math.pi * (i / upper_span)
         else:
             alpha[i] = 2 * math.pi + math.pi * ((i - upper_span) / (total - upper_span))
-    picks = np.linspace(0, total - 1, cols + 1)[:cols]
-    ring_alpha = np.interp(picks, np.arange(total), alpha)
+    ring_alpha = alpha
 
     neck_ring = np.zeros((cols, 3))
     for c in range(cols):
@@ -334,31 +333,29 @@ def build_neck(verts, cranium_grid):
 
 
 def build_ear(side):
-    """A smooth ear shell: outer helix, inner bowl, lobe."""
-    rows, cols = 14, 12
+    """A closed ear bump: a squashed ellipsoid that sinks into the skull.
+
+    A full ear needs an authored mesh; a smooth bump reads correctly in
+    silhouette and never pokes through the cheek.
+    """
+    rows, cols = 16, 20
     grid = np.zeros((rows, cols, 3))
-    cx, cy, cz = 7.35 * side, 0.2, -2.9
+    cx, cy, cz = 7.05 * side, -0.35, -3.3
+    rx, ry, rz = 1.05, 3.05, 1.70
     for r in range(rows):
-        v = r / (rows - 1)
+        phi = math.pi * (r / (rows - 1))
         for c in range(cols):
-            u = c / (cols - 1)
-            # Ellipse in the sagittal plane, narrower at the lobe.
-            ang = math.pi * 2 * u
-            width = 1.55 * (1.0 - 0.35 * v) * (1.0 - 0.30 * max(0.0, v - 0.55) / 0.45)
-            height = 3.25 * (1.0 - 0.10 * v)
-            z = math.cos(ang) * width
-            y = math.sin(ang) * height
-            y = y - 0.55 * max(0.0, -math.sin(ang)) * height * 0.35
-            # Depth: the rim stands off the head, the bowl sinks in.
-            rim = 1.0 - v
-            depth = 0.95 * rim + 0.15
-            depth -= 1.05 * math.exp(-(((u - 0.5) * 3.1) ** 2)) * (1 - rim) * 0.9
-            grid[r, c] = [cx + depth * side, cy + y, cz + z * 1.0]
-    for _ in range(2):
-        grid[1:-1, 1:-1] = (
-            grid[1:-1, 1:-1] * 0.5
-            + (grid[:-2, 1:-1] + grid[2:, 1:-1] + grid[1:-1, :-2] + grid[1:-1, 2:]) * 0.125
-        )
+            theta = 2 * math.pi * (c / cols)
+            y = math.cos(phi)
+            radial = math.sin(phi)
+            z = radial * math.cos(theta)
+            x = radial * math.sin(theta)
+            # Taper the lobe, lean the top back, keep the front edge tight.
+            taper = 1.0 - 0.32 * max(0.0, -y)
+            point = np.array(
+                [cx + x * rx * side, cy + y * ry, cz + z * rz * taper - 0.55 * y]
+            )
+            grid[r, c] = point
     return grid
 
 
@@ -413,39 +410,40 @@ def main():
     shell, ring_idx, neck_ring, shoulders = build_shell(verts)
     rows, cols = shell.shape[:2]
     # Row 0 sits on the face oval but carries its own UVs, so the atlas seam is clean.
-    shell_ids = np.zeros((rows, cols), dtype=int)
+    # One extra column duplicates the first, so the wrap has its own u = 1 and
+    # no triangle stretches the whole atlas rect.
+    shell_ids = np.zeros((rows, cols + 1), dtype=int)
     for r in range(rows):
-        for c in range(cols):
+        for c in range(cols + 1):
             shell_ids[r, c] = len(positions)
-            positions.append(list(map(float, shell[r, c])))
+            positions.append(list(map(float, shell[r, c % cols])))
             uvs.append(rect_uv("shell", c / cols, 1.0 - r / (rows - 1)))
-    for c in range(cols):
-        seam_targets.append([int(shell_ids[0, c]), [[int(ring_idx[c]), 1.0]]])
+    for c in range(cols + 1):
+        seam_targets.append([int(shell_ids[0, c]), [[int(ring_idx[c % cols]), 1.0]]])
     for r in range(rows - 1):
         for c in range(cols):
-            c1 = (c + 1) % cols
-            a, b = shell_ids[r, c], shell_ids[r, c1]
-            d, e = shell_ids[r + 1, c], shell_ids[r + 1, c1]
+            a, b = shell_ids[r, c], shell_ids[r, c + 1]
+            d, e = shell_ids[r + 1, c], shell_ids[r + 1, c + 1]
             indices += [a, b, d, b, e, d]
 
-    weights = seam_weights(shell[1:].reshape(-1, 3), shell[0], ring_idx, falloff=4.6)
+    wrapped = np.concatenate([shell[1:], shell[1:, :1]], axis=1).reshape(-1, 3)
+    weights = seam_weights(wrapped, shell[0], ring_idx, falloff=4.6)
     for vid, w in zip(shell_ids[1:].reshape(-1), weights):
         if w:
             seam_targets.append([int(vid), w])
 
     srows = shoulders.shape[0]
-    shoulder_ids = np.zeros((srows + 1, cols), dtype=int)
+    shoulder_ids = np.zeros((srows + 1, cols + 1), dtype=int)
     shoulder_ids[0] = shell_ids[-1]
     for r in range(srows):
-        for c in range(cols):
+        for c in range(cols + 1):
             shoulder_ids[r + 1, c] = len(positions)
-            positions.append(list(map(float, shoulders[r, c])))
+            positions.append(list(map(float, shoulders[r, c % cols])))
             uvs.append(rect_uv("bust", c / cols, 1.0 - r / srows))
     for r in range(srows):
         for c in range(cols):
-            c1 = (c + 1) % cols
-            a, b = shoulder_ids[r, c], shoulder_ids[r, c1]
-            d, e = shoulder_ids[r + 1, c], shoulder_ids[r + 1, c1]
+            a, b = shoulder_ids[r, c], shoulder_ids[r, c + 1]
+            d, e = shoulder_ids[r + 1, c], shoulder_ids[r + 1, c + 1]
             indices += [a, b, d, b, e, d]
 
     ear_ranges = []
@@ -453,15 +451,21 @@ def main():
         grid = build_ear(side)
         erows, ecols = grid.shape[:2]
         start = len(positions)
+        rect = "earLeft" if side < 0 else "earRight"
         for r in range(erows):
-            for c in range(ecols):
-                positions.append(list(map(float, grid[r, c])))
-                uvs.append(rect_uv("ear", c / (ecols - 1), 1.0 - r / (erows - 1)))
-        indices += grid_indices(start, erows, ecols, flip=side < 0, wrap=True)
-        ear_ranges.append({"side": name, "start": start, "rows": erows, "cols": ecols})
+            for c in range(ecols + 1):
+                point = grid[r, c % ecols]
+                positions.append(list(map(float, point)))
+                # Project sideways: the atlas holds a photo crop of that ear.
+                u = 0.5 + (point[2] - (-3.3)) / 5.2 * (-side)
+                v = 0.5 + (point[1] - (-0.35)) / 7.4
+                uvs.append(rect_uv(rect, min(1, max(0, u)), min(1, max(0, v))))
+        indices += grid_indices(start, erows, ecols + 1, flip=side < 0, wrap=False)
+        ear_ranges.append({"side": name, "start": start, "rows": erows, "cols": ecols + 1})
         anchor = np.array([verts[234] if side < 0 else verts[454]])
+        wrapped_ear = np.concatenate([grid, grid[:, :1]], axis=1).reshape(-1, 3)
         weights = seam_weights(
-            grid.reshape(-1, 3), anchor, [234 if side < 0 else 454], falloff=9.0
+            wrapped_ear, anchor, [234 if side < 0 else 454], falloff=9.0
         )
         for offset, w in enumerate(weights):
             if w:
@@ -474,7 +478,8 @@ def main():
         "faceCount": len(verts),
         "shell": {
             "rows": rows,
-            "cols": cols,
+            "cols": cols + 1,
+            "wrapCols": cols,
             "ids": [[int(v) for v in row] for row in shell_ids],
             "atlas": ATLAS["shell"],
             "seamFace": [int(i) for i in ring_idx],

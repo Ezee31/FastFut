@@ -1,6 +1,8 @@
 import * as THREE from "three";
 
-const STRIPS = 8;
+const HAIR_STRIPS = 8;
+/** One extra strip, fully opaque, for the cap under the cards. */
+const STRIPS = HAIR_STRIPS + 1;
 const STRIP_W = 256;
 const STRIP_H = 1024;
 
@@ -21,7 +23,7 @@ export function hairStripTexture() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const state = { value: 20260924 };
 
-  for (let strip = 0; strip < STRIPS; strip += 1) {
+  for (let strip = 0; strip < HAIR_STRIPS; strip += 1) {
     const x0 = strip * STRIP_W;
     // Denser strips for the inner layers, wispier ones for the silhouette.
     const density = strip < 4 ? 46 : strip < 6 ? 30 : 18;
@@ -62,6 +64,18 @@ export function hairStripTexture() {
     ctx.fillRect(x0 + STRIP_W * 0.08, STRIP_H * 0.74, STRIP_W * 0.84, STRIP_H * 0.26);
   }
 
+  // The cap strip: opaque, with a little value noise so it is not flat.
+  const capX = HAIR_STRIPS * STRIP_W;
+  ctx.fillStyle = "rgba(170,170,170,1)";
+  ctx.fillRect(capX, 0, STRIP_W, STRIP_H);
+  for (let i = 0; i < 2600; i += 1) {
+    const x = capX + rand(state) * STRIP_W;
+    const y = rand(state) * STRIP_H;
+    const tone = 120 + Math.floor(rand(state) * 110);
+    ctx.fillStyle = `rgba(${tone},${tone},${tone},0.5)`;
+    ctx.fillRect(x, y, 1 + rand(state) * 2, 6 + rand(state) * 26);
+  }
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -69,5 +83,5 @@ export function hairStripTexture() {
   texture.anisotropy = 8;
   texture.generateMipmaps = true;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
-  return { texture, strips: STRIPS };
+  return { texture, strips: STRIPS, hairStrips: HAIR_STRIPS };
 }

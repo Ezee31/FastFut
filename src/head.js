@@ -192,7 +192,9 @@ export function smoothNormals(geometry) {
 }
 
 export function scalpSampler(head, positions) {
-  const { rows, cols, ids } = head.shell;
+  const { rows, ids } = head.shell;
+  // The grid carries a duplicated seam column; sample across the real ring.
+  const cols = head.shell.wrapCols ?? head.shell.cols;
   const point = new THREE.Vector3();
   const du = new THREE.Vector3();
   const dv = new THREE.Vector3();

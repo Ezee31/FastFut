@@ -4,6 +4,13 @@ const SIZE = 2048;
 /** Grow triangles a hair so neighbours overlap instead of showing seams. */
 const EXPAND = 1.35;
 
+/** Face oval. Sampling exactly on it would pull background into the texture. */
+const OVAL = new Set([
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378,
+  400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21,
+  54, 103, 67, 109,
+]);
+
 const SKIN_SAMPLES = [
   [10, 0.0, 0.0], [151, 0, 0], [108, 0, 0], [337, 0, 0],
   [234, 0, 0], [454, 0, 0], [50, 0, 0], [280, 0, 0], [152, 0, 0],
@@ -128,7 +135,6 @@ export function bakeAtlas(head, captures) {
   const ctx = canvas.getContext("2d");
   const faceRect = head.atlas.face;
   const shellRect = head.atlas.shell;
-  const earRect = head.atlas.ear;
   const bustRect = head.atlas.bust;
 
   const readers = captures.map((capture) => sampler(capture.image));
@@ -170,19 +176,29 @@ export function bakeAtlas(head, captures) {
   const accumulated = new Float32Array(faceTriangles.length);
   captures.forEach((capture, index) => {
     const reader = readers[index];
+    const centre = [
+      capture.landmarks[1 * 3] * capture.width,
+      capture.landmarks[1 * 3 + 1] * capture.height,
+    ];
     faceTriangles.forEach((tri, t) => {
       const facing = Math.max(0, triangleNormalZ(capture.faceSpace, tri, 0));
-      const weight = facing ** 2.2;
-      if (weight < 0.02) return;
-      const alpha = weight / (accumulated[t] + weight);
-      accumulated[t] += weight;
+      const weight = facing ** 4 * (capture.weight ?? 1);
+      // Every triangle has to be painted by someone, or the base fill shows
+      // through as a flat patch. Later captures only win where they saw more.
+      const first = accumulated[t] === 0;
+      if (!first && weight < 0.02) return;
+      const alpha = first ? 1 : weight / (accumulated[t] + weight);
+      accumulated[t] += Math.max(weight, first ? 0.02 : 0);
       const src = [];
       const dst = [];
       for (const vertex of tri) {
-        src.push(
-          capture.landmarks[vertex * 3] * capture.width,
-          capture.landmarks[vertex * 3 + 1] * capture.height
-        );
+        let sx = capture.landmarks[vertex * 3] * capture.width;
+        let sy = capture.landmarks[vertex * 3 + 1] * capture.height;
+        if (OVAL.has(vertex)) {
+          sx += (centre[0] - sx) * 0.08;
+          sy += (centre[1] - sy) * 0.08;
+        }
+        src.push(sx, sy);
         const [u, v] = head.faceUv[vertex];
         const point = toAtlas(u, v, faceRect);
         dst.push(point[0], point[1]);
@@ -207,7 +223,8 @@ export function bakeAtlas(head, captures) {
   ctx.globalAlpha = 1;
 
   // Shell: the seam row copies the skin next to it, then fades to the nape and neck.
-  const { seamFace, cols } = head.shell;
+  const { seamFace } = head.shell;
+  const cols = head.shell.wrapCols ?? head.shell.cols;
   const base = captures[0];
   const seamColors = seamFace.map((faceIndex) => {
     let best = null;
@@ -226,6 +243,29 @@ export function bakeAtlas(head, captures) {
     });
     return best || skin;
   });
+  // Drop stray samples (collar, beard, shadow) and smooth around the ring, so
+  // the scalp and neck do not end up striped.
+  const skinLum = 0.25 * skin[0] + 0.45 * skin[1] + 0.3 * skin[2];
+  const plausible = seamColors.map((color) => {
+    const lum = 0.25 * color[0] + 0.45 * color[1] + 0.3 * color[2];
+    // Beard and shadow belong here; a bright collar does not.
+    return lum < skinLum * 1.22 ? color : skin;
+  });
+  const smoothed = plausible.map((_, index) => {
+    const out = [0, 0, 0];
+    let total = 0;
+    for (let k = -4; k <= 4; k += 1) {
+      const sample = plausible[(index + k + plausible.length) % plausible.length];
+      const weight = 5 - Math.abs(k);
+      out[0] += sample[0] * weight;
+      out[1] += sample[1] * weight;
+      out[2] += sample[2] * weight;
+      total += weight;
+    }
+    return out.map((channel) => channel / total);
+  });
+  seamColors.length = 0;
+  seamColors.push(...smoothed);
   const shellX = shellRect[0] * SIZE;
   const shellY = (1 - shellRect[1] - shellRect[3]) * SIZE;
   const shellW = shellRect[2] * SIZE;
@@ -235,17 +275,46 @@ export function bakeAtlas(head, captures) {
     const color = seamColors[c];
     const gradient = ctx.createLinearGradient(0, shellY, 0, shellY + shellH);
     gradient.addColorStop(0, rgb(color));
-    gradient.addColorStop(0.22, rgb(color, 0.93));
-    gradient.addColorStop(0.62, rgb(skin, 0.84));
-    gradient.addColorStop(1, rgb(skin, 0.7));
+    gradient.addColorStop(0.18, rgb(color, 0.95));
+    gradient.addColorStop(0.5, rgb(skin, 0.88));
+    gradient.addColorStop(0.78, rgb(skin, 0.72));
+    gradient.addColorStop(1, rgb(skin, 0.5));
     ctx.fillStyle = gradient;
     ctx.fillRect(shellX + c * columnWidth - 0.5, shellY, columnWidth + 1, shellH);
   }
   grain(ctx, shellRect, 26, 7);
 
-  ctx.fillStyle = rgb(skin, 0.95);
-  ctx.fillRect(earRect[0] * SIZE, (1 - earRect[1] - earRect[3]) * SIZE, earRect[2] * SIZE, earRect[3] * SIZE);
-  grain(ctx, earRect, 18, 3);
+  // Ears: crop them straight out of the sharpest capture.
+  const earSpec = [
+    [head.atlas.earLeft, 234, 93],
+    [head.atlas.earRight, 454, 323],
+  ];
+  for (const [rect, tragion, lower] of earSpec) {
+    const x = base.landmarks[tragion * 3] * base.width;
+    const y = base.landmarks[tragion * 3 + 1] * base.height;
+    const yLow = base.landmarks[lower * 3 + 1] * base.height;
+    const span = Math.max(Math.abs(yLow - y) * 2.6, base.height * 0.1);
+    ctx.fillStyle = rgb(skin, 0.95);
+    ctx.fillRect(rect[0] * SIZE, (1 - rect[1] - rect[3]) * SIZE, rect[2] * SIZE, rect[3] * SIZE);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rect[0] * SIZE, (1 - rect[1] - rect[3]) * SIZE, rect[2] * SIZE, rect[3] * SIZE);
+    ctx.clip();
+    const sign = tragion === 234 ? -1 : 1;
+    ctx.drawImage(
+      base.image,
+      x + sign * span * 0.1 - span / 2,
+      y - span / 2,
+      span,
+      span,
+      rect[0] * SIZE,
+      (1 - rect[1] - rect[3]) * SIZE,
+      rect[2] * SIZE,
+      rect[3] * SIZE
+    );
+    ctx.restore();
+    grain(ctx, rect, 10, 3);
+  }
 
   const jersey = ctx.createLinearGradient(0, (1 - bustRect[1] - bustRect[3]) * SIZE, 0, (1 - bustRect[1]) * SIZE);
   jersey.addColorStop(0, "#23262c");

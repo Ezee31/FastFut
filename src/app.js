@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { createOrbit } from "./orbit.js";
 import { STYLES, HAIR_COLORS, fadeLabel } from "./styles.js";
 import { loadHead, landmarksToPoints, fitToCanonical, applyShape, applyBlink } from "./head.js";
 import { scalpSampler } from "./head.js";
@@ -26,14 +26,7 @@ renderer.shadowMap.enabled = false;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#0d0c0b");
 const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 1, 600);
-camera.position.set(0, 1, 62);
-const controls = new OrbitControls(camera, canvas);
-controls.enablePan = false;
-controls.enableDamping = true;
-controls.dampingFactor = 0.075;
-controls.minDistance = 30;
-controls.maxDistance = 120;
-controls.target.set(0, -0.5, 0);
+const orbit = createOrbit(camera, canvas);
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.05).texture;
@@ -95,6 +88,7 @@ async function init() {
   const captures = await defaultCaptures();
   if (!captures.length) throw new Error("no default capture");
   await useCaptures(captures);
+  applyStyle(STYLES[0]);
   loader.classList.add("hidden");
   document.querySelector("#onboard").classList.toggle("hidden", true);
   window.__studioReady = true;
@@ -114,13 +108,12 @@ function buildMesh() {
 
   const skin = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    roughness: 0.66,
+    roughness: 0.78,
     metalness: 0,
-    sheen: 0.32,
-    sheenRoughness: 0.85,
+    sheen: 0.18,
+    sheenRoughness: 0.95,
     sheenColor: new THREE.Color("#ffd6c4"),
-    clearcoat: 0.08,
-    clearcoatRoughness: 0.75,
+    clearcoat: 0,
     side: THREE.FrontSide,
   });
   const maskUniform = { value: null };
@@ -172,12 +165,8 @@ async function trackImage(image, weight = 1) {
 
 async function defaultCaptures() {
   const base = import.meta.env.BASE_URL;
-  const wanted = [
-    [`${base}texture.jpg`, 1],
-    [`${base}refs/tres-cuartos.jpg`, 0.5],
-    [`${base}refs/perfil.jpg`, 0.35],
-    [`${base}refs/frente-2.jpg`, 0.4],
-  ];
+  // One sharp frontal beats mixing photos shot with different light and lenses.
+  const wanted = [[`${base}texture.jpg`, 1]];
   const out = [];
   for (const [src, weight] of wanted) {
     try {
@@ -235,12 +224,13 @@ function applyHairColor() {
     uniforms.uRoot.value.setRGB(...chosen.root);
     uniforms.uTip.value.setRGB(...chosen.tip);
   } else {
+    // Real hair reads through its sheen, so lift the tips well above the photo value.
     const linear = toLinear(state.naturalHair);
-    uniforms.uRoot.value.setRGB(linear[0] * 0.55, linear[1] * 0.55, linear[2] * 0.55);
+    uniforms.uRoot.value.setRGB(linear[0] * 0.9, linear[1] * 0.9, linear[2] * 0.9);
     uniforms.uTip.value.setRGB(
-      Math.min(1, linear[0] * 1.5),
-      Math.min(1, linear[1] * 1.5),
-      Math.min(1, linear[2] * 1.5)
+      Math.min(1, linear[0] * 3.4 + 0.02),
+      Math.min(1, linear[1] * 3.4 + 0.016),
+      Math.min(1, linear[2] * 3.4 + 0.014)
     );
   }
 }
@@ -255,6 +245,7 @@ function rebuildHair() {
   }
   const built = buildHair(state.head, state.positions, state.sampler, style, {
     strips: state.strips.strips,
+    hairStrips: state.strips.hairStrips,
   });
   state.hairSolid = new THREE.Mesh(built.geometry, state.hairMaterials.solid);
   state.hairBlend = new THREE.Mesh(built.geometry, state.hairMaterials.blended);
@@ -292,12 +283,15 @@ function readParams() {
 }
 
 function frameCamera() {
-  state.geometry.computeBoundingSphere();
-  const sphere = state.geometry.boundingSphere;
-  controls.target.set(0, sphere.center.y + 2.5, 0);
-  const distance = sphere.radius * 2.15;
-  camera.position.set(0, sphere.center.y + 4, distance);
-  controls.update();
+  // Frame the head, not the bust: chin to crown plus room for tall hair.
+  const positions = state.positions;
+  let top = -Infinity;
+  for (let i = 0; i < state.head.faceCount; i += 1) {
+    top = Math.max(top, positions[i * 3 + 1]);
+  }
+  const chin = positions[152 * 3 + 1];
+  const crown = top + 9;
+  orbit.frame((crown + chin) / 2, (crown - chin) * 1.4);
 }
 
 const VIEWS = [
@@ -308,17 +302,8 @@ const VIEWS = [
   { id: "arriba", name: "Arriba", yaw: 8, pitch: 52 },
 ];
 
-let cameraTarget = null;
-
 function goToView(view) {
-  const radius = camera.position.distanceTo(controls.target);
-  const yaw = THREE.MathUtils.degToRad(view.yaw);
-  const pitch = THREE.MathUtils.degToRad(view.pitch);
-  cameraTarget = new THREE.Vector3(
-    Math.sin(yaw) * Math.cos(pitch) * radius,
-    Math.sin(pitch) * radius + controls.target.y,
-    Math.cos(yaw) * Math.cos(pitch) * radius
-  );
+  orbit.goTo(view.yaw, view.pitch);
 }
 
 function buildUi() {
@@ -465,17 +450,20 @@ async function updateLive(time) {
 function idleAnimation(time) {
   if (!state.shape) return;
   state.animated.set(state.shape);
-  if (time > state.blinkAt) {
-    state.blink = Math.min(1, state.blink + 0.18);
-    if (state.blink >= 1) {
-      state.blinkAt = time + 2.2 + Math.random() * 3.4;
-      state.blink = -1;
+  // Close fast, open slower, then wait a few seconds.
+  if (state.closing) {
+    state.blink += 0.28;
+    if (state.blink >= 1) state.closing = false;
+  } else if (state.blink > 0) {
+    state.blink -= 0.12;
+    if (state.blink <= 0) {
+      state.blink = 0;
+      state.blinkAt = time + 2.4 + Math.random() * 3.6;
     }
-  } else if (state.blink < 0) {
-    state.blink = Math.min(0, state.blink + 0.12);
+  } else if (time > state.blinkAt) {
+    state.closing = true;
   }
-  const amount = state.blink < 0 ? 1 + state.blink : state.blink;
-  applyBlink(state.animated, Math.max(0, amount));
+  applyBlink(state.animated, Math.max(0, Math.min(1, state.blink)));
   applyShape(state.head, state.animated, state.positions);
   state.geometry.attributes.position.needsUpdate = true;
   state.geometry.computeVertexNormals();
@@ -503,12 +491,8 @@ function animate() {
   } else {
     idleAnimation(time);
   }
-  if (cameraTarget) {
-    camera.position.lerp(cameraTarget, 0.12);
-    if (camera.position.distanceTo(cameraTarget) < 0.4) cameraTarget = null;
-  }
+  orbit.update();
   updateLights();
-  controls.update();
   renderer.render(scene, camera);
 }
 
@@ -517,5 +501,7 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+window.__debug = state;
 
 export { state };
