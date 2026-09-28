@@ -62,11 +62,14 @@ bash start.sh
 
 `install.sh` baja Paper, el plugin DEDsafío y los plugins útiles. No pisa `server.properties` si ya lo editaste. Al arrancar se acepta el EULA de Minecraft: https://aka.ms/MinecraftEULA
 
-3. En la consola del servidor, con tu nombre exacto de Minecraft:
+3. En la consola negra de `start.sh` (sin la barra `/`), con tu nombre exacto de Minecraft Java, el de la cuenta. No es el mail:
 
 ```
 op TuNombre
+lp user TuNombre permission set * true
 ```
+
+`op` deja el nivel 4 de operador: comandos de vanilla y los de admin de DEDsafío (`/dedsafio kit`, `qumara`, `calmar`, y el resto). La segunda línea, de LuckPerms, da el comodín `*`: WorldEdit, Chunky y cualquier plugin que se sume después. Para sacarlos: `deop TuNombre` y `lp user TuNombre permission unset *`.
 
 4. En Minecraft 26.3: Multijugador → añadir servidor → `localhost` si jugás en la misma PC. El puerto es **25565**.
 5. Para que entren otros, abrí el 25565 en el router o usá una IP pública. `online-mode=true`: hacen falta cuentas originales.
