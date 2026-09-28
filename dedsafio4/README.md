@@ -1,5 +1,7 @@
 # DEDsafío 4 para un Realm de Java
 
+Si el Realm no llegó a cargar este datapack, el servidor Paper está en [`server/README.md`](../server/README.md). Este mundo se queda como está: no hay que resetear New World ni borrar el hueco.
+
 Recreación de fans para jugar en un **Realm de Minecraft Java 26.3**. No es el servidor, el mapa ni los plugins de Eufonia Studio. El DEDsafío Minecraft 4 empezó el 21 de septiembre de 2026 y sigue en curso: el mapa oficial, los mods y los plugins no se publicaron. Este paquete no los incluye y no hay que buscar una filtración.
 
 Un Realm de Java no puede correr mods de Forge o Fabric, ni plugins de Paper. Sí puede cargar un datapack y un mundo. El DEDsafío se juega en Java. Un Realm de Bedrock no abre este mundo.
