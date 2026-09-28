@@ -21,31 +21,23 @@ Los tótems de la inmortalidad siguen funcionando. La ruleta no los anula.
 
 ## Cómo meterlo en el Realm
 
-El archivo `DEDsafio4-Realm-26.3.zip` es un mundo de Java 26.3. `level.dat` está en la raíz del zip.
+El archivo `DEDsafio4-Realm-26.3.zip` es un mundo de Java 26.3 llamado **DEDsafio 4**. `level.dat` está en la raíz del zip.
 
-1. Entra al Realm desde Minecraft Java **26.3**.
-2. Descarga una copia del mundo actual por si quieres volver atrás.
-3. Sustituye el mundo del Realm con este zip.
-4. Entra, date op y prueba `/function dedsafio:admin/kit`.
+New World, ALVALAND y el minijuego se quedan donde están. Este mundo va en el hueco gris que dice **Empty**. No pulses **Reset World** mientras New World esté seleccionado: ese botón borra el mundo que está marcado.
 
-El mundo ya trae el datapack, las arenas, el campamento, el búnker y el spawn movido al campamento. El día empieza en 1.
+1. Cierra Minecraft.
+2. Descomprime el zip en una carpeta nueva:
 
-### Si quieres conservar el mundo que ya tienes
+   `%AppData%\.minecraft\saves\DEDsafio 4\`
 
-No sustituyas el mundo. Copia la carpeta `datapack` dentro de `datapacks` del mundo del Realm, con el nombre `dedsafio4`. Vuelve a subir el mundo. Como op, en un claro del mundo principal:
+   Dentro de esa carpeta tiene que verse `level.dat`, no otra carpeta.
+3. Abre Minecraft Java 26.3 y entra a la configuración del Realm, en la pestaña Worlds.
+4. Pulsa el cuadrado gris **Empty**. Si abajo sigue diciendo Reset World, sigues encima de New World: no lo pulses.
+5. Elige subir un mundo que ya tienes y selecciona **DEDsafio 4**.
+6. Cuando termine, deja ese hueco activo y pulsa Play.
+7. Entra, date op y prueba `/function dedsafio:admin/kit`.
 
-```
-/reload
-/function dedsafio:admin/campamento
-```
-
-Eso aplana 11×11 bloques donde estás parado, arma el búnker 28 bloques al sur y **mueve el spawn del mundo**. Para levantar las arenas:
-
-```
-/function dedsafio:admin/reconstruir_mapa
-```
-
-Las arenas tardan unos segundos en aparecer. Hay que estar en el mundo con gente, porque el servidor tiene que seguir corriendo ticks.
+El mundo ya trae el datapack, las arenas, el campamento, el búnker y el spawn al lado de la fogata. El día empieza en 1. New World sigue en su hueco y se puede volver a activar cuando quieras.
 
 ## Jugadores
 
