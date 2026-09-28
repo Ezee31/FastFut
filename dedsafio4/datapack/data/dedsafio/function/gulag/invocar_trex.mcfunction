@@ -1,0 +1,2 @@
+execute in dedsafio:eventos run kill @e[type=ravager,tag=trex]
+execute in dedsafio:eventos run summon ravager 0 41 10 {CustomName:{text:"Tiranosaurio Rex",color:"dark_red"},CustomNameVisible:1b,PersistenceRequired:1b,Health:180f,Tags:["trex"],Glowing:1b,attributes:[{id:"minecraft:max_health",base:180},{id:"minecraft:attack_damage",base:10},{id:"minecraft:scale",base:2.1},{id:"minecraft:movement_speed",base:0.28}]}
