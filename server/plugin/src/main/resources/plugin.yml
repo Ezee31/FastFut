@@ -1,0 +1,37 @@
+name: Dedsafio
+version: 1.0.0
+main: dev.fastfut.dedsafio.DedsafioPlugin
+api-version: "1.21"
+author: FastFut
+description: Recreación de fans de DEDsafío 4 para un servidor Paper.
+commands:
+  dedsafio:
+    description: Administración y estado del evento.
+    usage: /dedsafio
+  equipo:
+    description: Elige equipo.
+    usage: /equipo <rojo|azul|verde|amarillo|naranja|morado>
+    permission: dedsafio.play
+  gulag:
+    description: Entra al Gulag si estás caído.
+    usage: /gulag
+    permission: dedsafio.play
+  juicio:
+    description: Anótate al Juicio.
+    usage: /juicio
+    permission: dedsafio.play
+  jefe:
+    description: Ve a la arena de Qumara.
+    usage: /jefe
+    permission: dedsafio.play
+  iceberg:
+    description: Ve al iceberg.
+    usage: /iceberg
+    permission: dedsafio.play
+permissions:
+  dedsafio.play:
+    description: Comandos de jugador.
+    default: true
+  dedsafio.admin:
+    description: Control del evento.
+    default: op

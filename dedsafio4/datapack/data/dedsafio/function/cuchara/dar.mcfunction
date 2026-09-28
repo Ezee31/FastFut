@@ -1,0 +1,1 @@
+give @s warped_fungus_on_a_stick[custom_name={text:"Cuchara de Resurrección",color:"gold",italic:0b},lore=[{text:"Revive a un compañero caído.",color:"gray",italic:0b}],custom_data={cuchara:"si"},item_model="minecraft:golden_shovel",enchantment_glint_override=1b,max_stack_size=16] 1

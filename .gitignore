@@ -1,0 +1,5 @@
+server/run/
+server/plugin/.gradle/
+server/plugin/build/
+*.log
+.gradle/
